@@ -24,6 +24,7 @@ interface MatchResult {
   suggestions: string[]
   aiAnalysis: string
   matchLevel: string
+  aiPowered?: boolean
 }
 
 export default function MatchPage() {
@@ -257,7 +258,10 @@ export default function MatchPage() {
                   </div>
                   <div className="flex-1 space-y-2">
                     <div className="bg-blue-50 rounded-lg p-3">
-                      <p className="text-xs font-medium text-blue-800 mb-1">🤖 AI 分析报告</p>
+                      <p className="text-xs font-medium text-blue-800 mb-1">
+                        🤖 AI 分析报告
+                        {result.aiPowered && <span className="ml-1 px-1.5 py-0.5 bg-green-200 text-green-800 rounded text-[10px] font-bold">MiMo 真实AI</span>}
+                      </p>
                       <p className="text-xs text-blue-700 leading-relaxed">{result.aiAnalysis}</p>
                     </div>
                     {/* Matched Skills */}

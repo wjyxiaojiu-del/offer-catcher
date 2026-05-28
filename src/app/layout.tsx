@@ -33,6 +33,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <a href="/auto-apply" className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-medium text-orange-600 hover:text-orange-700 hover:bg-orange-50 rounded-lg transition-colors">
                   🚀 批量投递
                 </a>
+                <a href="/boss" className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-medium text-green-600 hover:text-green-700 hover:bg-green-50 rounded-lg transition-colors">
+                  🤖 BOSS直聘
+                </a>
                 <a href="/applications" className="px-2 sm:px-3 py-1.5 text-xs sm:text-sm font-medium text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
                   投递记录
                 </a>

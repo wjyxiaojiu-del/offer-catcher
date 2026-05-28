@@ -2,7 +2,6 @@ import { NextResponse } from "next/server"
 import { parseResume } from "@/lib/resume-parser"
 
 async function parsePDF(buffer: Buffer): Promise<string> {
-  // pdf-parse is a CJS module
   const pdfParse = (await import("pdf-parse" as any)) as any
   const fn = pdfParse.default || pdfParse
   const data = await fn(buffer)
@@ -19,16 +18,12 @@ async function parseDOCX(buffer: Buffer): Promise<string> {
 export async function POST(req: Request) {
   try {
     const contentType = req.headers.get("content-type") || ""
-
     let text = ""
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await req.formData()
       const file = formData.get("file") as File | null
-
-      if (!file) {
-        return NextResponse.json({ error: "No file provided" }, { status: 400 })
-      }
+      if (!file) return NextResponse.json({ error: "No file provided" }, { status: 400 })
 
       const buffer = Buffer.from(await file.arrayBuffer())
       const fileName = file.name.toLowerCase()
@@ -38,11 +33,8 @@ export async function POST(req: Request) {
       } else if (fileName.endsWith(".docx")) {
         text = await parseDOCX(buffer)
       } else if (fileName.endsWith(".doc")) {
-        try {
-          text = await parseDOCX(buffer)
-        } catch {
-          return NextResponse.json({ error: "不支持 .doc 格式，请转为 .docx 或 .txt" }, { status: 400 })
-        }
+        try { text = await parseDOCX(buffer) }
+        catch { return NextResponse.json({ error: "不支持 .doc 格式，请转为 .docx 或 .txt" }, { status: 400 }) }
       } else if (fileName.endsWith(".txt") || fileName.endsWith(".text")) {
         text = buffer.toString("utf-8")
       } else {
@@ -57,7 +49,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "无法从文件中提取文本内容" }, { status: 400 })
     }
 
-    const resume = parseResume(text)
+    // Try AI parsing first, fallback to rule-based
+    let resume
+    try {
+      const { aiParseResume } = await import("@/lib/ai")
+      const aiResult = await aiParseResume(text)
+      resume = {
+        ...aiResult,
+        rawText: text,
+        source: "ai" as const,
+      }
+    } catch (err) {
+      console.warn("AI parsing failed, falling back to rule-based:", err)
+      resume = { ...parseResume(text), source: "rule" as const }
+    }
+
     return NextResponse.json({ resume })
   } catch (error) {
     console.error("Resume parse error:", error)

@@ -13,6 +13,7 @@ export interface MatchResult {
   suggestions: string[]
   aiAnalysis: string
   matchLevel: "excellent" | "good" | "fair" | "weak"
+  aiPowered?: boolean
 }
 
 // Skill synonym groups for fuzzy matching
