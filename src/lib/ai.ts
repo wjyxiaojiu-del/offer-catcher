@@ -136,7 +136,7 @@ function sanitizeJSON(text: string): string {
 
 // ============ AI Resume Parsing ============
 
-interface AIResume {
+export interface AIResume {
   name: string
   email: string
   phone: string

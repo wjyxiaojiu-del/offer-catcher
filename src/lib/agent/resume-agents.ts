@@ -12,7 +12,16 @@ import {
   extractExperience,
   extractProjects,
 } from "@/lib/resume-parser"
-import { aiParseResume } from "@/lib/ai"
+import { aiParseResume, type AIResume } from "@/lib/ai"
+
+// A lazily-invoked, memoized AI parse. When several specialist agents
+// each hit low confidence, they share ONE underlying aiParseResume call
+// instead of firing five full-resume LLM requests in parallel.
+type AIResumeProvider = () => Promise<AIResume>
+
+function defaultAIProvider(text: string): AIResumeProvider {
+  return () => aiParseResume(text)
+}
 
 export interface AgentRunResult<T> {
   agentName: string
@@ -62,7 +71,8 @@ function isLowConfidenceProjects(projects: Project[]): boolean {
  * @returns Object containing name, email, and phone
  */
 export async function infoExtractionAgent(
-  text: string
+  text: string,
+  getAI: AIResumeProvider = defaultAIProvider(text)
 ): Promise<{ name: string; email: string; phone: string }> {
   const ruleResult = parseResume(text)
   const info = {
@@ -75,9 +85,9 @@ export async function infoExtractionAgent(
     return info
   }
 
-  // Fallback to LLM
+  // Fallback to LLM (shared/memoized across agents)
   try {
-    const aiResult = await aiParseResume(text)
+    const aiResult = await getAI()
     return {
       name: aiResult.name && aiResult.name !== "未知" ? aiResult.name : info.name,
       email: aiResult.email || info.email,
@@ -99,16 +109,19 @@ export async function infoExtractionAgent(
  * @param text - Raw resume text
  * @returns Array of skill strings
  */
-export async function skillExtractionAgent(text: string): Promise<string[]> {
+export async function skillExtractionAgent(
+  text: string,
+  getAI: AIResumeProvider = defaultAIProvider(text)
+): Promise<string[]> {
   const skills = extractSkills(text)
 
   if (!isLowConfidenceSkills(skills)) {
     return skills
   }
 
-  // Fallback to LLM
+  // Fallback to LLM (shared/memoized across agents)
   try {
-    const aiResult = await aiParseResume(text)
+    const aiResult = await getAI()
     if (aiResult.skills?.length) {
       return Array.from(new Set([...skills, ...aiResult.skills]))
     }
@@ -129,16 +142,19 @@ export async function skillExtractionAgent(text: string): Promise<string[]> {
  * @param text - Raw resume text
  * @returns Array of Education objects
  */
-export async function educationAgent(text: string): Promise<Education[]> {
+export async function educationAgent(
+  text: string,
+  getAI: AIResumeProvider = defaultAIProvider(text)
+): Promise<Education[]> {
   const education = extractEducation(text)
 
   if (!isLowConfidenceEducation(education)) {
     return education
   }
 
-  // Fallback to LLM
+  // Fallback to LLM (shared/memoized across agents)
   try {
-    const aiResult = await aiParseResume(text)
+    const aiResult = await getAI()
     if (aiResult.education?.length) {
       return aiResult.education.map((e: any) => ({
         school: e.school || "",
@@ -167,16 +183,19 @@ export async function educationAgent(text: string): Promise<Education[]> {
  * @param text - Raw resume text
  * @returns Array of Experience objects
  */
-export async function experienceAgent(text: string): Promise<Experience[]> {
+export async function experienceAgent(
+  text: string,
+  getAI: AIResumeProvider = defaultAIProvider(text)
+): Promise<Experience[]> {
   const experience = extractExperience(text)
 
   if (!isLowConfidenceExperience(experience)) {
     return experience
   }
 
-  // Fallback to LLM
+  // Fallback to LLM (shared/memoized across agents)
   try {
-    const aiResult = await aiParseResume(text)
+    const aiResult = await getAI()
     if (aiResult.experience?.length) {
       return aiResult.experience.map((e: any) => ({
         company: e.company || "",
@@ -204,16 +223,19 @@ export async function experienceAgent(text: string): Promise<Experience[]> {
  * @param text - Raw resume text
  * @returns Array of Project objects
  */
-export async function projectAgent(text: string): Promise<Project[]> {
+export async function projectAgent(
+  text: string,
+  getAI: AIResumeProvider = defaultAIProvider(text)
+): Promise<Project[]> {
   const projects = extractProjects(text)
 
   if (!isLowConfidenceProjects(projects)) {
     return projects
   }
 
-  // Fallback to LLM
+  // Fallback to LLM (shared/memoized across agents)
   try {
-    const aiResult = await aiParseResume(text)
+    const aiResult = await getAI()
     if (aiResult.projects?.length) {
       return aiResult.projects.map((p: any) => ({
         name: p.name || "",
@@ -356,6 +378,15 @@ export async function multiAgentParseResume(text: string): Promise<MultiAgentPar
 
   const agents: AgentRunResult<unknown>[] = []
 
+  // Shared, memoized AI provider: the first low-confidence agent to need
+  // the LLM triggers ONE aiParseResume(text); the rest await the same
+  // promise. Worst case is 1 full-resume call, not 5.
+  let aiPromise: Promise<AIResume> | null = null
+  const sharedGetAI: AIResumeProvider = () => {
+    if (!aiPromise) aiPromise = aiParseResume(text)
+    return aiPromise
+  }
+
   // Run 5 specialist agents in parallel
   const runAgent = async <T,>(
     name: string,
@@ -375,11 +406,11 @@ export async function multiAgentParseResume(text: string): Promise<MultiAgentPar
   }
 
   const [info, skills, education, experience, projects] = await Promise.all([
-    runAgent("infoExtractionAgent", () => infoExtractionAgent(text)),
-    runAgent("skillExtractionAgent", () => skillExtractionAgent(text)),
-    runAgent("educationAgent", () => educationAgent(text)),
-    runAgent("experienceAgent", () => experienceAgent(text)),
-    runAgent("projectAgent", () => projectAgent(text)),
+    runAgent("infoExtractionAgent", () => infoExtractionAgent(text, sharedGetAI)),
+    runAgent("skillExtractionAgent", () => skillExtractionAgent(text, sharedGetAI)),
+    runAgent("educationAgent", () => educationAgent(text, sharedGetAI)),
+    runAgent("experienceAgent", () => experienceAgent(text, sharedGetAI)),
+    runAgent("projectAgent", () => projectAgent(text, sharedGetAI)),
   ])
 
   // Validation agent
