@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { matchResumeToJobs, generateOptimizationReport } from "@/lib/matcher"
 import { withTimeout } from "@/lib/utils"
 import { requireApiAccess } from "@/lib/api-guard"
+import { dbResumeToParsed } from "@/lib/resume-mapper"
 import { jobs } from "@/data/jobs"
 import type { ParsedResume } from "@/types"
 
@@ -22,31 +23,7 @@ export async function POST(req: Request) {
           include: { educations: true, experiences: true, projects: true, skills: true },
         })
         if (record) {
-          resolvedResume = {
-            name: record.name,
-            email: record.email,
-            phone: record.phone,
-            rawText: record.rawText,
-            source: record.source as "ai" | "rule",
-            summary: record.summary || undefined,
-            id: record.id,
-            education: record.educations.map((e) => ({
-              school: e.school, major: e.major, degree: e.degree,
-              year: e.year, startYear: e.startYear || undefined,
-              endYear: e.endYear || undefined, gpa: e.gpa || undefined,
-            })),
-            experience: record.experiences.map((e) => ({
-              company: e.company, title: e.title, duration: e.duration,
-              description: e.description, startDate: e.startDate || undefined,
-              endDate: e.endDate || undefined,
-            })),
-            projects: record.projects.map((p) => {
-              let techStack: string[] = []
-              try { techStack = JSON.parse(p.techStack) } catch { techStack = [] }
-              return { name: p.name, description: p.description, techStack }
-            }),
-            skills: record.skills.map((s) => s.name),
-          }
+          resolvedResume = dbResumeToParsed(record)
         } else {
           if (!resume) return NextResponse.json({ error: "No resume data" }, { status: 400 })
           resolvedResume = resume

@@ -2,54 +2,10 @@ import { NextResponse } from "next/server"
 import { multiAgentParseResume } from "@/lib/agent/resume-agents"
 import { withTimeout, sanitizeText } from "@/lib/utils"
 import { requireApiAccess } from "@/lib/api-guard"
+import { extractTextFromFile, FileTooLargeError, UnsupportedFileError } from "@/lib/file-extract"
+import { buildResumeWriteData } from "@/lib/resume-mapper"
 import type { ParsedResume } from "@/types"
 import type { AgentRunResult } from "@/lib/agent/resume-agents"
-
-// ========== PDF Parser (unpdf) ==========
-async function parsePDF(buffer: Buffer): Promise<string> {
-  const { extractText } = await import("unpdf")
-  const uint8 = new Uint8Array(buffer)
-  const { text } = await extractText(uint8)
-  const joined = Array.isArray(text) ? text.join("\n") : text
-  if (joined && joined.trim().length > 5) return joined
-  throw new Error("无法从 PDF 中提取文本，建议转为 DOCX/TXT 后上传")
-}
-
-async function parseDOCX(buffer: Buffer): Promise<string> {
-  try {
-    const mammoth = (await import("mammoth" as any)) as any
-    const extractRawText = mammoth.extractRawText || mammoth.default?.extractRawText
-    if (!extractRawText) throw new Error("mammoth extractRawText not found")
-    const result = await extractRawText({ buffer })
-    return result.value || ""
-  } catch (err: any) {
-    console.error("DOCX parse error:", err)
-    throw new Error(`DOCX解析失败: ${err.message || "请检查文件格式"}`)
-  }
-}
-
-async function extractTextFromFile(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const fileName = file.name.toLowerCase()
-
-  if (fileName.endsWith(".pdf")) {
-    return parsePDF(buffer)
-  }
-  if (fileName.endsWith(".docx")) {
-    return parseDOCX(buffer)
-  }
-  if (fileName.endsWith(".doc")) {
-    try {
-      return await parseDOCX(buffer)
-    } catch {
-      throw new Error("不支持 .doc 格式，请转为 .docx 或 .txt")
-    }
-  }
-  if (fileName.endsWith(".txt") || fileName.endsWith(".text")) {
-    return buffer.toString("utf-8")
-  }
-  throw new Error("不支持的文件格式，请上传 PDF/DOCX/TXT 文件")
-}
 
 interface ParseResponse {
   resume: ParsedResume
@@ -120,45 +76,7 @@ export async function POST(req: Request) {
     try {
       const { prisma } = await import("@/lib/db")
       const saved = await prisma.resume.create({
-        data: {
-          name: resume.name,
-          email: resume.email,
-          phone: resume.phone,
-          rawText: resume.rawText,
-          source: resume.source || "rule",
-          summary: resume.summary || "",
-          educations: {
-            create: resume.education.map((e) => ({
-              school: e.school || "",
-              major: e.major || "",
-              degree: e.degree || "",
-              year: e.year || "",
-              startYear: e.startYear,
-              endYear: e.endYear,
-              gpa: e.gpa,
-            })),
-          },
-          experiences: {
-            create: resume.experience.map((e) => ({
-              company: e.company || "",
-              title: e.title || "",
-              duration: e.duration || "",
-              description: e.description || "",
-              startDate: e.startDate,
-              endDate: e.endDate,
-            })),
-          },
-          projects: {
-            create: resume.projects.map((p) => ({
-              name: p.name || "",
-              description: p.description || "",
-              techStack: JSON.stringify(p.techStack || []),
-            })),
-          },
-          skills: {
-            create: resume.skills.map((s) => ({ name: s })),
-          },
-        },
+        data: buildResumeWriteData(resume),
       })
       resumeId = saved.id
     } catch (dbErr) {
@@ -176,9 +94,15 @@ export async function POST(req: Request) {
       resumeId,
     })
   } catch (error: any) {
+    if (error instanceof FileTooLargeError) {
+      return NextResponse.json({ error: error.message }, { status: 413 })
+    }
+    if (error instanceof UnsupportedFileError) {
+      return NextResponse.json({ error: error.message }, { status: 415 })
+    }
     console.error("Multi-agent resume parse error:", error)
     return NextResponse.json(
-      { error: `简历解析失败: ${error.message || "请检查文件格式"}` },
+      { error: "简历解析失败，请检查文件格式" },
       { status: 500 }
     )
   }

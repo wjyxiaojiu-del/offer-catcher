@@ -3,58 +3,9 @@ import { parseResume } from "@/lib/resume-parser"
 import { withTimeout, sanitizeText } from "@/lib/utils"
 import { apiError } from "@/lib/api-response"
 import { requireApiAccess } from "@/lib/api-guard"
+import { extractTextFromFile, MAX_FILE_SIZE } from "@/lib/file-extract"
+import { buildResumeWriteData, dbResumeToParsed } from "@/lib/resume-mapper"
 import type { ParsedResume } from "@/types"
-
-// Maximum file size: 10MB
-const MAX_FILE_SIZE = 10 * 1024 * 1024
-
-// ========== PDF Parser (unpdf) ==========
-async function parsePDF(buffer: Buffer): Promise<string> {
-  const { extractText } = await import("unpdf")
-  const uint8 = new Uint8Array(buffer)
-  const { text } = await extractText(uint8)
-  const joined = Array.isArray(text) ? text.join("\n") : text
-  if (joined && joined.trim().length > 5) return joined
-  throw new Error("无法从 PDF 中提取文本，建议转为 DOCX/TXT 后上传")
-}
-
-// ========== DOCX Parser ==========
-async function parseDOCX(buffer: Buffer): Promise<string> {
-  try {
-    const mammoth = (await import("mammoth" as any)) as any
-    const extractRawText = mammoth.extractRawText || mammoth.default?.extractRawText
-    if (!extractRawText) throw new Error("mammoth extractRawText not found")
-    const result = await extractRawText({ buffer })
-    return result.value || ""
-  } catch (err: any) {
-    console.error("DOCX parse error:", err)
-    throw new Error(`DOCX解析失败: ${err.message || "请检查文件格式"}`)
-  }
-}
-
-// ========== File extraction ==========
-async function extractTextFromFile(file: File): Promise<string> {
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const fileName = file.name.toLowerCase()
-
-  if (fileName.endsWith(".pdf")) {
-    return parsePDF(buffer)
-  }
-  if (fileName.endsWith(".docx")) {
-    return parseDOCX(buffer)
-  }
-  if (fileName.endsWith(".doc")) {
-    try {
-      return await parseDOCX(buffer)
-    } catch {
-      throw new Error("不支持 .doc 格式，请转为 .docx 或 .txt")
-    }
-  }
-  if (fileName.endsWith(".txt") || fileName.endsWith(".text")) {
-    return buffer.toString("utf-8")
-  }
-  throw new Error("不支持的文件格式，请上传 PDF/DOCX/TXT 文件")
-}
 
 // ========== AI Parse with timeout ==========
 async function aiParseWithTimeout(text: string): Promise<Partial<ParsedResume> | null> {
@@ -157,45 +108,7 @@ export async function POST(req: Request) {
     try {
       const { prisma } = await import("@/lib/db")
       const saved = await prisma.resume.create({
-        data: {
-          name: resume.name,
-          email: resume.email,
-          phone: resume.phone,
-          rawText: resume.rawText,
-          source: resume.source || "rule",
-          summary: resume.summary || "",
-          educations: {
-            create: resume.education.map((e) => ({
-              school: e.school || "",
-              major: e.major || "",
-              degree: e.degree || "",
-              year: e.year || "",
-              startYear: e.startYear,
-              endYear: e.endYear,
-              gpa: e.gpa,
-            })),
-          },
-          experiences: {
-            create: resume.experience.map((e) => ({
-              company: e.company || "",
-              title: e.title || "",
-              duration: e.duration || "",
-              description: e.description || "",
-              startDate: e.startDate,
-              endDate: e.endDate,
-            })),
-          },
-          projects: {
-            create: resume.projects.map((p) => ({
-              name: p.name || "",
-              description: p.description || "",
-              techStack: JSON.stringify(p.techStack || []),
-            })),
-          },
-          skills: {
-            create: resume.skills.map((s) => ({ name: s })),
-          },
-        },
+        data: buildResumeWriteData(resume),
       })
       resumeId = saved.id
     } catch (dbErr) {
@@ -234,38 +147,7 @@ export async function GET(req: Request) {
       return apiError("简历不存在", "NOT_FOUND", 404)
     }
 
-    const resume: ParsedResume = {
-      id: dbResume.id,
-      name: dbResume.name,
-      email: dbResume.email,
-      phone: dbResume.phone,
-      education: dbResume.educations.map((e) => ({
-        school: e.school,
-        major: e.major,
-        degree: e.degree,
-        year: e.year,
-        startYear: e.startYear || undefined,
-        endYear: e.endYear || undefined,
-        gpa: e.gpa || undefined,
-      })),
-      experience: dbResume.experiences.map((e) => ({
-        company: e.company,
-        title: e.title,
-        duration: e.duration,
-        description: e.description,
-        startDate: e.startDate || undefined,
-        endDate: e.endDate || undefined,
-      })),
-      skills: dbResume.skills.map((s) => s.name),
-      projects: dbResume.projects.map((p) => ({
-        name: p.name,
-        description: p.description,
-        techStack: JSON.parse(p.techStack || "[]") as string[],
-      })),
-      rawText: dbResume.rawText,
-      source: dbResume.source as "ai" | "rule",
-      summary: dbResume.summary || undefined,
-    }
+    const resume: ParsedResume = dbResumeToParsed(dbResume)
 
     return NextResponse.json({ resume })
   } catch (error: any) {
@@ -288,57 +170,14 @@ export async function PUT(req: Request) {
 
     const { prisma } = await import("@/lib/db")
 
-    const data = {
-      name: resume.name || "",
-      email: resume.email || "",
-      phone: resume.phone || "",
-      rawText: resume.rawText || "",
-      summary: resume.summary || "",
-      educations: {
-        deleteMany: {},
-        create: (resume.education || []).map((e) => ({
-          school: e.school || "",
-          major: e.major || "",
-          degree: e.degree || "",
-          year: e.year || "",
-          startYear: e.startYear,
-          endYear: e.endYear,
-          gpa: e.gpa,
-        })),
-      },
-      experiences: {
-        deleteMany: {},
-        create: (resume.experience || []).map((e) => ({
-          company: e.company || "",
-          title: e.title || "",
-          duration: e.duration || "",
-          description: e.description || "",
-          startDate: e.startDate,
-          endDate: e.endDate,
-        })),
-      },
-      projects: {
-        deleteMany: {},
-        create: (resume.projects || []).map((p) => ({
-          name: p.name || "",
-          description: p.description || "",
-          techStack: JSON.stringify(p.techStack || []),
-        })),
-      },
-      skills: {
-        deleteMany: {},
-        create: (resume.skills || []).map((s) => ({ name: s })),
-      },
-    }
+    const data = buildResumeWriteData(resume, { forUpdate: true })
 
     let resultId: string
     if (id) {
       await prisma.resume.update({ where: { id }, data })
       resultId = id
     } else {
-      const created = await prisma.resume.create({
-        data: { ...data, source: resume.source || "rule" },
-      })
+      const created = await prisma.resume.create({ data })
       resultId = created.id
     }
 

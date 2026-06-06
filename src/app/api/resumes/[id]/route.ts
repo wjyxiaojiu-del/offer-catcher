@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { requireApiAccess } from "@/lib/api-guard"
+import { dbResumeToParsed } from "@/lib/resume-mapper"
 
 // GET /api/resumes/[id] - 获取简历详情
 export async function GET(
@@ -27,32 +28,9 @@ export async function GET(
       return NextResponse.json({ error: "简历不存在" }, { status: 404 })
     }
 
-    // 转换数据格式
+    const parsed = dbResumeToParsed(resume)
     const formattedResume = {
-      id: resume.id,
-      name: resume.name,
-      email: resume.email,
-      phone: resume.phone,
-      summary: resume.summary,
-      rawText: resume.rawText,
-      skills: resume.skills.map((s) => s.name),
-      education: resume.educations.map((e) => ({
-        school: e.school,
-        major: e.major,
-        degree: e.degree,
-        year: e.year,
-      })),
-      experience: resume.experiences.map((e) => ({
-        company: e.company,
-        title: e.title,
-        duration: e.duration,
-        description: e.description,
-      })),
-      projects: resume.projects.map((p) => ({
-        name: p.name,
-        description: p.description,
-        techStack: JSON.parse(p.techStack || "[]"),
-      })),
+      ...parsed,
       createdAt: resume.createdAt,
       updatedAt: resume.updatedAt,
     }
@@ -61,7 +39,7 @@ export async function GET(
   } catch (error: any) {
     console.error("Get resume error:", error)
     return NextResponse.json(
-      { error: error.message || "获取简历详情失败" },
+      { error: "获取简历详情失败" },
       { status: 500 }
     )
   }

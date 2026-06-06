@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { aiAnalyzeMatch } from "@/lib/ai"
 import { requireApiAccess } from "@/lib/api-guard"
+import { dbResumeToParsed } from "@/lib/resume-mapper"
 
 // POST /api/jobs/match - 岗位匹配检查
 export async function POST(req: Request) {
@@ -33,28 +34,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "简历不存在" }, { status: 404 })
     }
 
-    // 构建简历数据
+    // aiAnalyzeMatch wants a subset of ParsedResume — derive it from the
+    // shared mapper instead of hand-rolling another copy.
+    const parsed = dbResumeToParsed(resume)
     const resumeData = {
-      name: resume.name,
-      skills: resume.skills.map((s) => s.name),
-      education: resume.educations.map((e) => ({
-        school: e.school,
-        major: e.major,
-        degree: e.degree,
-        year: e.year,
-      })),
-      experience: resume.experiences.map((e) => ({
-        company: e.company,
-        title: e.title,
-        duration: e.duration,
-        description: e.description,
-      })),
-      projects: resume.projects.map((p) => ({
-        name: p.name,
-        description: p.description,
-        techStack: JSON.parse(p.techStack || "[]"),
-      })),
-      summary: resume.summary || "",
+      name: parsed.name,
+      skills: parsed.skills,
+      education: parsed.education,
+      experience: parsed.experience,
+      projects: parsed.projects,
+      summary: parsed.summary || "",
     }
 
     // 构建岗位数据
@@ -91,7 +80,7 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("Match job error:", error)
     return NextResponse.json(
-      { error: error.message || "匹配分析失败" },
+      { error: "匹配分析失败" },
       { status: 500 }
     )
   }
