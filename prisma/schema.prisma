@@ -166,7 +166,10 @@ model AgentMessage {
   metadata  String?
   createdAt DateTime @default(now())
 
-  session AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  // Relate via AgentSession.sessionId (the application-level UUID that all
+  // read/write paths use) rather than the cuid primary key, so messages are
+  // never orphaned from their session.
+  session AgentSession @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
 
   @@index([sessionId, createdAt])
 }

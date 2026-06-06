@@ -12,6 +12,10 @@ export async function saveSessionMemory(
   value: unknown
 ): Promise<void> {
   try {
+    // NOTE: read-modify-write on the JSON blob. Two concurrent writes to the
+    // same session can lose updates (last writer wins). Acceptable at current
+    // single-user concurrency; revisit with a row lock or per-key column if
+    // sessions are written concurrently.
     const existing = await prisma.agentSession.findUnique({ where: { sessionId } })
     const data = existing ? JSON.parse(existing.data || "{}") : {}
     data[key] = value
@@ -109,6 +113,14 @@ export async function saveMessage(
   metadata?: Record<string, unknown>
 ): Promise<void> {
   try {
+    // Ensure the parent session row exists first. AgentMessage now relates
+    // to AgentSession.sessionId, so a missing session would violate the FK
+    // (and a pure chat turn may never have triggered saveSessionMemory).
+    await prisma.agentSession.upsert({
+      where: { sessionId },
+      create: { sessionId },
+      update: {},
+    })
     await prisma.agentMessage.create({
       data: {
         sessionId,
