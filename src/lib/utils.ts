@@ -13,16 +13,23 @@ export function withTimeout<T>(
   fallback: T,
   options?: { silent?: boolean }
 ): Promise<T> {
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)
-  )
-
-  return Promise.race([promise, timeoutPromise]).catch((err) => {
-    if (!options?.silent) {
-      console.warn("withTimeout fallback triggered:", err.message)
-    }
-    return fallback
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)
   })
+
+  return Promise.race([promise, timeoutPromise])
+    .catch((err) => {
+      if (!options?.silent) {
+        console.warn("withTimeout fallback triggered:", err.message)
+      }
+      return fallback
+    })
+    .finally(() => {
+      // Always clear the pending timer so it doesn't dangle when the
+      // wrapped promise wins the race.
+      if (timer) clearTimeout(timer)
+    })
 }
 
 export function sanitizeText(text: string): string {

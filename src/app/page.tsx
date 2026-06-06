@@ -1,3 +1,4 @@
+import Link from "next/link"
 import { Target, Bot, BarChart3, Send, MessageSquare, ArrowRight, Sparkles } from "lucide-react"
 import { CountUp } from "@/components/count-up"
 import { UploadSection } from "@/components/home/upload-section"
@@ -47,14 +48,14 @@ export default function Home() {
 
             {/* Agent CTA */}
             <div className="mt-6">
-              <a
+              <Link
                 href="/agent"
                 className="inline-flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl font-medium text-sm hover:bg-gray-800 hover:shadow-lg transition-all active:scale-95"
               >
                 <MessageSquare className="w-4 h-4" />
                 <span>与求职 Agent 对话</span>
                 <ArrowRight className="w-4 h-4" />
-              </a>
+              </Link>
             </div>
 
             {/* CountUp Stats */}

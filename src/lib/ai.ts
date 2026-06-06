@@ -2,6 +2,10 @@ import OpenAI from "openai"
 import { INTENT_SYSTEM_PROMPT } from "./agent/prompts"
 
 const MODEL = process.env.MIMO_MODEL || "mimo-v2.5-pro"
+// Hard ceiling for a single LLM round-trip. Without this, direct-call
+// routes (greetings / jd-optimize / jobs-match) hang until the platform
+// gateway times out when the upstream stalls.
+const LLM_TIMEOUT_MS = Number(process.env.MIMO_TIMEOUT_MS) || 12000
 
 function getClient() {
   if (!process.env.MIMO_API_KEY) {
@@ -15,15 +19,18 @@ function getClient() {
 }
 
 async function chat(systemPrompt: string, userPrompt: string): Promise<string> {
-  const res = await getClient().chat.completions.create({
-    model: MODEL,
-    messages: [
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ],
-    temperature: 0.3,
-    max_tokens: 2000,
-  })
+  const res = await getClient().chat.completions.create(
+    {
+      model: MODEL,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      temperature: 0.3,
+      max_tokens: 2000,
+    },
+    { signal: AbortSignal.timeout(LLM_TIMEOUT_MS) }
+  )
   return res.choices[0]?.message?.content || ""
 }
 

@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState, useEffect } from "react"
 import {
   Send, Eye, Phone, XCircle, Sparkles, Inbox, Bot,
@@ -160,7 +161,7 @@ export default function ApplicationsPage() {
         <div className="text-center py-20 text-gray-400">
           <Inbox className="w-14 h-14 mx-auto mb-4 text-gray-300" />
           <p className="text-lg">{applications.length === 0 ? "暂无投递记录" : "没有符合条件的记录"}</p>
-          <a href="/" className="text-blue-600 text-sm mt-2 inline-block hover:underline">去投递简历 →</a>
+          <Link href="/" className="text-blue-600 text-sm mt-2 inline-block hover:underline">去投递简历 →</Link>
         </div>
       ) : (
         <div className="space-y-3">

@@ -52,64 +52,72 @@ export class BossAuto {
     const headless = process.env.BOSS_HEADLESS === "true"
     const hasSession = fs.existsSync(STATE_FILE)
 
-    this.browser = await chromium.launch({
-      headless: headless && hasSession, // Only headless if session exists
-      args: [
-        "--disable-blink-features=AutomationControlled",
-        "--no-sandbox",
-        "--disable-infobars",
-        "--disable-dev-shm-usage",
-        "--disable-extensions",
-        "--disable-gpu",
-        "--no-first-run",
-        "--no-default-browser-check",
-      ],
-    })
+    // Wrap the full browser→context→page chain so a mid-init failure
+    // does not leak a half-launched Chromium process.
+    try {
+      this.browser = await chromium.launch({
+        headless: headless && hasSession, // Only headless if session exists
+        args: [
+          "--disable-blink-features=AutomationControlled",
+          "--no-sandbox",
+          "--disable-infobars",
+          "--disable-dev-shm-usage",
+          "--disable-extensions",
+          "--disable-gpu",
+          "--no-first-run",
+          "--no-default-browser-check",
+        ],
+      })
 
-    this.ensureStateDir()
+      this.ensureStateDir()
 
-    const contextOptions = {
-      viewport: { width: 1280, height: 800 },
-      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      locale: "zh-CN",
-      timezoneId: "Asia/Shanghai",
-    }
+      const contextOptions = {
+        viewport: { width: 1280, height: 800 },
+        userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        locale: "zh-CN",
+        timezoneId: "Asia/Shanghai",
+      }
 
-    // Try to restore session
-    if (hasSession) {
-      try {
-        this.context = await this.browser.newContext({
-          ...contextOptions,
-          storageState: STATE_FILE,
-        })
-      } catch {
+      // Try to restore session
+      if (hasSession) {
+        try {
+          this.context = await this.browser.newContext({
+            ...contextOptions,
+            storageState: STATE_FILE,
+          })
+        } catch {
+          this.context = await this.browser.newContext(contextOptions)
+        }
+      } else {
         this.context = await this.browser.newContext(contextOptions)
       }
-    } else {
-      this.context = await this.browser.newContext(contextOptions)
+
+      // Stealth: hide automation indicators
+      await this.context.addInitScript(() => {
+        // Hide webdriver flag
+        Object.defineProperty(navigator, "webdriver", { get: () => false })
+        // Fake plugins to look like a real browser
+        Object.defineProperty(navigator, "plugins", {
+          get: () => [1, 2, 3, 4, 5],
+        })
+        // Fake languages
+        Object.defineProperty(navigator, "languages", {
+          get: () => ["zh-CN", "zh", "en"],
+        })
+        // Override permissions query for notifications
+        const originalQuery = window.navigator.permissions.query
+        window.navigator.permissions.query = (parameters: any) =>
+          parameters.name === "notifications"
+            ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
+            : originalQuery(parameters)
+      })
+
+      this.page = await this.context.newPage()
+    } catch (err) {
+      // Clean up any partially-created resources before rethrowing.
+      await this.close().catch(() => {})
+      throw err
     }
-
-    // Stealth: hide automation indicators
-    await this.context.addInitScript(() => {
-      // Hide webdriver flag
-      Object.defineProperty(navigator, "webdriver", { get: () => false })
-      // Fake plugins to look like a real browser
-      Object.defineProperty(navigator, "plugins", {
-        get: () => [1, 2, 3, 4, 5],
-      })
-      // Fake languages
-      Object.defineProperty(navigator, "languages", {
-        get: () => ["zh-CN", "zh", "en"],
-      })
-      // Override permissions query for notifications
-      const originalQuery = window.navigator.permissions.query
-      window.navigator.permissions.query = (parameters: any) =>
-        parameters.name === "notifications"
-          ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
-          : originalQuery(parameters)
-    })
-
-    this.page = await this.context.newPage()
   }
 
   // Check if logged in
@@ -362,6 +370,14 @@ export class BossAuto {
     this.page = null
   }
 
+  // Lightweight liveness check — throws if the browser/page is gone.
+  // Cheaper than screenshot() and never hangs on a stuck page.
+  assertAlive(): void {
+    if (!this.browser || !this.browser.isConnected() || !this.page || this.page.isClosed()) {
+      throw new Error("Browser instance is not alive")
+    }
+  }
+
   // Get screenshot for frontend display
   async screenshot(): Promise<string> {
     if (!this.page) return ""
@@ -372,19 +388,41 @@ export class BossAuto {
 
 // Singleton instance management
 let instance: BossAuto | null = null
+// Mutex: in-flight launch so concurrent callers reuse one Chromium
+// instead of each spawning (and leaking) their own.
+let launchPromise: Promise<BossAuto> | null = null
 
 export async function getBossInstance(): Promise<BossAuto> {
+  // Reuse a healthy existing instance. Liveness check uses a cheap
+  // page.url() rather than a screenshot (which is heavy and can hang).
   if (instance) {
     try {
-      await instance.screenshot()
+      instance.assertAlive()
       return instance
     } catch {
+      await instance.close().catch(() => {})
       instance = null
     }
   }
-  instance = new BossAuto()
-  await instance.launch()
-  return instance
+
+  // If a launch is already underway, await it instead of starting another.
+  if (launchPromise) return launchPromise
+
+  launchPromise = (async () => {
+    const candidate = new BossAuto()
+    await candidate.launch()
+    instance = candidate
+    return candidate
+  })()
+
+  try {
+    return await launchPromise
+  } catch (err) {
+    instance = null
+    throw err
+  } finally {
+    launchPromise = null
+  }
 }
 
 export async function closeBossInstance(): Promise<void> {
