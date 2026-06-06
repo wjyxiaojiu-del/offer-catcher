@@ -110,6 +110,8 @@ model Job {
   updatedAt    DateTime @default(now()) @updatedAt
 
   applications Application[]
+
+  @@index([title, company])
 }
 
 model Application {
@@ -131,6 +133,11 @@ model Application {
   resume Resume? @relation(fields: [resumeId], references: [id], onDelete: SetNull)
   job    Job?    @relation(fields: [jobId], references: [id], onDelete: SetNull)
   history ApplicationStatusHistory[]
+
+  @@index([status])
+  @@index([appliedAt])
+  @@index([resumeId])
+  @@index([jobId])
 }
 
 model ApplicationStatusHistory {

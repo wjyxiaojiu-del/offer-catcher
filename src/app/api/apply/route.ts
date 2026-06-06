@@ -12,9 +12,6 @@ function toDisplayMethod(m: string): ApplicationMethod {
   return "手动投递"
 }
 
-// In-memory store (fallback when DB unavailable)
-const applications: Map<string, Application> = new Map()
-
 export async function POST(req: Request) {
   const authError = requireApiAccess(req)
   if (authError) return authError
@@ -56,9 +53,6 @@ export async function POST(req: Request) {
       console.warn("DB application save failed:", dbErr)
     }
 
-    // Always keep in-memory as fallback
-    applications.set(appData.id, appData)
-
     return NextResponse.json({ success: true, application: appData })
   } catch (error) {
     return apiError("投递失败", "APPLY_ERROR", 500)
@@ -94,8 +88,8 @@ export async function GET(req: Request) {
       }
     })
     return NextResponse.json({ applications: apps })
-  } catch {
-    const allApps = Array.from(applications.values())
-    return NextResponse.json({ applications: allApps })
+  } catch (err) {
+    console.error("Apply GET error:", err)
+    return apiError("获取投递记录失败", "GET_ERROR", 500)
   }
 }

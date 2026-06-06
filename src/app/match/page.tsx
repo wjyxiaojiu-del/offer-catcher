@@ -11,6 +11,7 @@ import { CountUp } from "@/components/count-up"
 import { MatchCardSkeleton, StatsSkeleton, ResumeSkeleton } from "@/components/skeleton"
 import { useToast } from "@/components/ui/toast"
 import { cn } from "@/lib/utils"
+import { scoreColor, barColor } from "@/lib/ui-utils"
 import type { ParsedResume, MatchResult } from "@/types"
 
 const RadarChart = dynamic(
@@ -215,9 +216,7 @@ export default function MatchPage() {
                     <p className="text-gray-500 text-sm mt-1">{result.job.company} · {result.job.location} · {result.job.salary}</p>
                   </div>
                   <div className="text-right ml-3">
-                    <div className={cn("text-3xl font-bold",
-                      result.score >= 80 ? "text-green-600" : result.score >= 60 ? "text-blue-600" : result.score >= 40 ? "text-yellow-600" : "text-red-500"
-                    )}>
+                    <div className={cn("text-3xl font-bold", scoreColor(result.score))}>
                       <CountUp end={result.score} duration={1000 + i * 100} suffix="%" />
                     </div>
                   </div>
@@ -233,9 +232,7 @@ export default function MatchPage() {
                           <Icon className="w-3 h-3" /> {label}
                         </div>
                         <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                          <div className={cn("h-full rounded-full transition-all duration-1000",
-                            score >= 70 ? "bg-green-500" : score >= 40 ? "bg-yellow-500" : "bg-red-400"
-                          )} style={{ width: `${score}%` }} />
+                          <div className={cn("h-full rounded-full transition-all duration-1000", barColor(score))} style={{ width: `${score}%` }} />
                         </div>
                         <div className="text-xs font-medium mt-0.5 text-gray-700">{score}%</div>
                       </div>

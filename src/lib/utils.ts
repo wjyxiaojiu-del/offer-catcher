@@ -11,11 +11,17 @@ export function withTimeout<T>(
   promise: Promise<T>,
   ms: number,
   fallback: T,
-  options?: { silent?: boolean }
+  options?: { silent?: boolean; abortController?: AbortController }
 ): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const timeoutPromise = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Timeout after ${ms}ms`)), ms)
+    timer = setTimeout(() => {
+      // If an AbortController was provided, abort it so the underlying
+      // operation (e.g. an LLM call that accepts a signal) can stop
+      // immediately instead of running to completion in the background.
+      options?.abortController?.abort()
+      reject(new Error(`Timeout after ${ms}ms`))
+    }, ms)
   })
 
   return Promise.race([promise, timeoutPromise])

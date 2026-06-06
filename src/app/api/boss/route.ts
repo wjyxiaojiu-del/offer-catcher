@@ -3,6 +3,7 @@ import { getBossInstance, closeBossInstance } from "@/lib/boss-auto"
 import { requireApiAccess, requireBossAutomation } from "@/lib/api-guard"
 import { apiError } from "@/lib/api-response"
 import { parseBody, BossBodySchema } from "@/lib/schemas"
+import type { BossJob } from "@/types"
 
 // POST /api/boss - Handle different actions
 export async function POST(req: Request) {
@@ -50,11 +51,11 @@ export async function POST(req: Request) {
         // Persist successful applications to DB
         const { prisma } = await import("@/lib/db")
         const resumeId = bodyResumeId || undefined
-        const sentJobs = results.filter((r: any) => r.status === "sent")
+        const sentJobs = results.filter((r: BossJob) => r.status === "sent")
         if (sentJobs.length > 0) {
           try {
             await prisma.$transaction(
-              sentJobs.map((job: any) =>
+              sentJobs.map((job: BossJob) =>
                 prisma.application.create({
                   data: {
                     resumeId,
@@ -84,8 +85,8 @@ export async function POST(req: Request) {
         return NextResponse.json({
           results,
           total: results.length,
-          sent: results.filter((r: any) => r.status === "sent").length,
-          failed: results.filter((r: any) => r.status === "error").length,
+          sent: results.filter((r: BossJob) => r.status === "sent").length,
+          failed: results.filter((r: BossJob) => r.status === "error").length,
         })
       }
 

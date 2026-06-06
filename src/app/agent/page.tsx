@@ -11,9 +11,21 @@ import { useAgentStream } from "@/hooks/useAgentStream"
 
 const STORAGE_KEY = "offer-catcher-agent-sessions"
 
+// Shape of a match result as received from the agent stream. Only the fields
+// the card actually renders are listed; the rest are optional.
+interface AgentMatch {
+  title: string
+  company: string
+  location: string
+  score: number
+  jobId?: string
+  matchedSkills?: string[]
+  missingSkills?: string[]
+}
+
 // ============ Components ============
 
-function MatchCardInline({ m, onClick }: { m: any; onClick: () => void }) {
+function MatchCardInline({ m, onClick }: { m: AgentMatch; onClick: () => void }) {
   return (
     <div
       className="bg-white border rounded-xl p-3 hover:shadow-md transition-shadow cursor-pointer"
@@ -331,7 +343,7 @@ export default function AgentPage() {
                   <div className="mt-3 space-y-2">
                     <p className="text-xs font-semibold text-gray-500">匹配结果</p>
                     <div className="grid sm:grid-cols-2 gap-2">
-                      {msg.matches.slice(0, 4).map((m: any, i: number) => (
+                      {msg.matches.slice(0, 4).map((m: AgentMatch, i: number) => (
                         <MatchCardInline
                           key={i}
                           m={m}

@@ -51,6 +51,14 @@ function clientKey(req: Request, kind: LimitKind): string {
 
 export function rateLimit(req: Request, kind: LimitKind = "general"): NextResponse | null {
   const now = Date.now()
+
+  // Evict expired buckets so the map doesn't grow unboundedly when
+  // hammered from many distinct IPs. Runs O(bucket_count) per call but
+  // the map is tiny in practice (one entry per active IP per kind).
+  Array.from(buckets.entries()).forEach(([k, v]) => {
+    if (v.resetAt <= now) buckets.delete(k)
+  })
+
   const key = clientKey(req, kind)
   const current = buckets.get(key)
 

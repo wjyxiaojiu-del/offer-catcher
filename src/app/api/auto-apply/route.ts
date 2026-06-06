@@ -6,9 +6,6 @@ import { apiError } from "@/lib/api-response"
 import { requireApiAccess } from "@/lib/api-guard"
 import { parseBody, AutoApplyBodySchema } from "@/lib/schemas"
 
-// In-memory store
-const applications: Map<string, Application> = new Map()
-
 export async function POST(req: Request) {
   const authError = requireApiAccess(req)
   if (authError) return authError
@@ -64,7 +61,6 @@ export async function POST(req: Request) {
         appliedAt: new Date().toISOString(),
         method: "自动投递",
       }
-      applications.set(appData.id, appData)
       return appData
     })
 
@@ -109,6 +105,16 @@ export async function GET(req: Request) {
   const authError = requireApiAccess(req)
   if (authError) return authError
 
-  const allApps = Array.from(applications.values())
-  return NextResponse.json({ applications: allApps })
+  try {
+    const { prisma } = await import("@/lib/db")
+    const dbApps = await prisma.application.findMany({
+      where: { method: "自动投递" },
+      orderBy: { appliedAt: "desc" },
+      take: 100,
+    })
+    return NextResponse.json({ applications: dbApps })
+  } catch (err) {
+    console.error("Auto-apply GET error:", err)
+    return apiError("获取投递记录失败", "GET_ERROR", 500)
+  }
 }

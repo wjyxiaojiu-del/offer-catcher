@@ -289,32 +289,15 @@ export class BossAuto {
     }
   }
 
-  // Generate AI greeting
+  // Generate AI greeting — uses the shared LLM client (ai.ts) so retries,
+  // timeout, and prompt injection escaping are applied consistently.
   async generateGreeting(job: BossJob, resumeSkills: string[]): Promise<string> {
     try {
-      const OpenAI = (await import("openai")).default
-      const client = new OpenAI({
-        apiKey: process.env.MIMO_API_KEY,
-        baseURL: process.env.MIMO_BASE_URL,
-      })
-
-      const res = await client.chat.completions.create({
-        model: process.env.MIMO_MODEL || "mimo-v2.5-pro",
-        messages: [
-          {
-            role: "system",
-            content: "你是一个求职助手。根据岗位信息和候选人技能，生成一句简短专业的打招呼语（50字以内）。语气自然友好，突出匹配点。"
-          },
-          {
-            role: "user",
-            content: `岗位: ${job.title} @ ${job.company}\n薪资: ${job.salary}\n要求: ${job.experience} ${job.education}\n候选人技能: ${resumeSkills.join(", ")}\n\n请生成一句打招呼语。`
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 100,
-      })
-
-      return res.choices[0]?.message?.content || `您好，我对${job.title}岗位很感兴趣，希望有机会沟通。`
+      const { callLLM, escapeUserContent } = await import("@/lib/ai")
+      const systemPrompt = "你是一个求职助手。根据岗位信息和候选人技能，生成一句简短专业的打招呼语（50字以内）。语气自然友好，突出匹配点。"
+      const userPrompt = `岗位: ${escapeUserContent(job.title)} @ ${escapeUserContent(job.company)}\n薪资: ${job.salary}\n要求: ${job.experience} ${job.education}\n候选人技能: ${escapeUserContent(resumeSkills.join(", "))}\n\n请生成一句打招呼语。`
+      const result = await callLLM(systemPrompt, userPrompt, 1)
+      return result || `您好，我对${job.title}岗位很感兴趣，希望有机会沟通。`
     } catch {
       return `您好，我对${job.title}岗位很感兴趣，我的背景与岗位需求比较匹配，希望有机会进一步沟通。`
     }

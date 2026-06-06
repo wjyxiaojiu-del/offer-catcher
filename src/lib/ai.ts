@@ -67,7 +67,7 @@ function extractJSON(text: string): string {
 }
 
 // Escape user content to prevent prompt injection
-function escapeUserContent(text: string, maxLen = 8000): string {
+export function escapeUserContent(text: string, maxLen = 8000): string {
   let s = text
     .replace(/<RESUME_CONTENT>/gi, "[RESUME_TAG]")
     .replace(/<\/RESUME_CONTENT>/gi, "[/RESUME_TAG]")
