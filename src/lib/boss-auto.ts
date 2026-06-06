@@ -1,31 +1,37 @@
 import { chromium, Browser, Page, BrowserContext } from "playwright"
 import path from "path"
 import fs from "fs"
+import type { BossJob, ApplyConfig } from "@/types"
 
 const STATE_DIR = path.join(process.cwd(), ".browser-state")
 const STATE_FILE = path.join(STATE_DIR, "boss-session.json")
 
-export interface BossJob {
-  title: string
-  company: string
-  salary: string
-  location: string
-  experience: string
-  education: string
-  description: string
-  url: string
-  hrName: string
-  status: "pending" | "sent" | "skipped" | "error"
-  message?: string
-}
+// CSS selectors — update here when BOSS changes their UI
+const SELECTORS = {
+  jobCards: ".job-card-wrapper, .job-list-box li, [class*=\"job-card\"]",
+  jobTitle: ".job-name, [class*=\"job-name\"], h3",
+  companyName: ".company-name, [class*=\"company\"] a, [class*=\"company-name\"]",
+  salary: ".salary, [class*=\"salary\"]",
+  location: ".job-area, [class*=\"area\"], [class*=\"location\"]",
+  tags: ".tag-list li, [class*=\"tag\"] span",
+  jobLink: "a[href*=\"/job_detail\"]",
+  chatBtn: "button:has-text(\"立即沟通\"), button:has-text(\"沟通\"), [class*=\"btn-start\"], a:has-text(\"立即沟通\")",
+  chatInput: "textarea[class*=\"input\"], .chat-input textarea, [class*=\"msg-input\"] textarea, textarea",
+  sendBtn: "button:has-text(\"发送\"), [class*=\"btn-send\"], button[class*=\"send\"]",
+  qrImg: "img[src*=\"qrcode\"], .qrcode-img img, [class*=\"qr\"] img",
+  qrTab: "text=扫码登录",
+} as const
 
-export interface ApplyConfig {
-  keywords: string       // 搜索关键词
-  city: string          // 城市 (如 "北京")
-  maxApply: number      // 最多投递数
-  greeting: string      // 打招呼语
-  minSalary?: number    // 最低薪资(K)
-  experience?: string   // 经验要求
+// Retry helper with exponential backoff
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelay = 2000): Promise<T> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try { return await fn() }
+    catch (err) {
+      if (attempt === maxRetries) throw err
+      await new Promise(r => setTimeout(r, baseDelay * Math.pow(2, attempt - 1)))
+    }
+  }
+  throw new Error("unreachable")
 }
 
 export class BossAuto {
@@ -42,31 +48,66 @@ export class BossAuto {
 
   // Launch browser
   async launch(): Promise<void> {
+    // Headless mode: env var override, otherwise headed for QR code
+    const headless = process.env.BOSS_HEADLESS === "true"
+    const hasSession = fs.existsSync(STATE_FILE)
+
     this.browser = await chromium.launch({
-      headless: false, // Show browser for QR code scanning
-      args: ["--disable-blink-features=AutomationControlled"],
+      headless: headless && hasSession, // Only headless if session exists
+      args: [
+        "--disable-blink-features=AutomationControlled",
+        "--no-sandbox",
+        "--disable-infobars",
+        "--disable-dev-shm-usage",
+        "--disable-extensions",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-default-browser-check",
+      ],
     })
 
     this.ensureStateDir()
 
+    const contextOptions = {
+      viewport: { width: 1280, height: 800 },
+      userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+      locale: "zh-CN",
+      timezoneId: "Asia/Shanghai",
+    }
+
     // Try to restore session
-    if (fs.existsSync(STATE_FILE)) {
+    if (hasSession) {
       try {
         this.context = await this.browser.newContext({
+          ...contextOptions,
           storageState: STATE_FILE,
-          viewport: { width: 1280, height: 800 },
-          userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         })
       } catch {
-        this.context = await this.browser.newContext({
-          viewport: { width: 1280, height: 800 },
-        })
+        this.context = await this.browser.newContext(contextOptions)
       }
     } else {
-      this.context = await this.browser.newContext({
-        viewport: { width: 1280, height: 800 },
-      })
+      this.context = await this.browser.newContext(contextOptions)
     }
+
+    // Stealth: hide automation indicators
+    await this.context.addInitScript(() => {
+      // Hide webdriver flag
+      Object.defineProperty(navigator, "webdriver", { get: () => false })
+      // Fake plugins to look like a real browser
+      Object.defineProperty(navigator, "plugins", {
+        get: () => [1, 2, 3, 4, 5],
+      })
+      // Fake languages
+      Object.defineProperty(navigator, "languages", {
+        get: () => ["zh-CN", "zh", "en"],
+      })
+      // Override permissions query for notifications
+      const originalQuery = window.navigator.permissions.query
+      window.navigator.permissions.query = (parameters: any) =>
+        parameters.name === "notifications"
+          ? Promise.resolve({ state: Notification.permission } as PermissionStatus)
+          : originalQuery(parameters)
+    })
 
     this.page = await this.context.newPage()
   }
@@ -96,7 +137,7 @@ export class BossAuto {
     await this.page.waitForTimeout(2000)
 
     // Find QR code image
-    const qrImg = await this.page.$('img[src*="qrcode"], .qrcode-img img, [class*="qr"] img')
+    const qrImg = await this.page.$(SELECTORS.qrImg)
     let qrUrl = ""
 
     if (qrImg) {
@@ -105,11 +146,11 @@ export class BossAuto {
 
     // If no QR found, try to click QR login tab
     if (!qrUrl) {
-      const qrTab = await this.page.$('text=扫码登录')
+      const qrTab = await this.page.$(SELECTORS.qrTab)
       if (qrTab) {
         await qrTab.click()
         await this.page.waitForTimeout(1000)
-        const qrImg2 = await this.page.$('img[src*="qrcode"], .qrcode-img img, [class*="qr"] img')
+        const qrImg2 = await this.page.$(SELECTORS.qrImg)
         if (qrImg2) qrUrl = (await qrImg2.getAttribute("src")) || ""
       }
     }
@@ -148,22 +189,24 @@ export class BossAuto {
     const cityCode = cityMap[config.city] || "101010100"
     const url = `https://www.zhipin.com/web/geek/job?query=${encodeURIComponent(config.keywords)}&city=${cityCode}`
 
-    await this.page.goto(url, { waitUntil: "domcontentloaded" })
-    await this.page.waitForTimeout(3000)
+    await withRetry(async () => {
+      await this.page!.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 })
+      await this.page!.waitForTimeout(3000)
+    })
 
     const jobs: BossJob[] = []
 
     // Parse job cards
-    const jobCards = await this.page.$$('.job-card-wrapper, .job-list-box li, [class*="job-card"]')
+    const jobCards = await this.page.$$(SELECTORS.jobCards)
 
     for (const card of jobCards.slice(0, config.maxApply * 2)) {
       try {
-        const title = await card.$eval('.job-name, [class*="job-name"], h3', el => el.textContent?.trim() || "").catch(() => "")
-        const company = await card.$eval('.company-name, [class*="company"] a, [class*="company-name"]', el => el.textContent?.trim() || "").catch(() => "")
-        const salary = await card.$eval('.salary, [class*="salary"]', el => el.textContent?.trim() || "").catch(() => "")
-        const location = await card.$eval('.job-area, [class*="area"], [class*="location"]', el => el.textContent?.trim() || "").catch(() => "")
-        const tags = await card.$$eval('.tag-list li, [class*="tag"] span', els => els.map(el => el.textContent?.trim() || "")).catch(() => [])
-        const link = await card.$eval('a[href*="/job_detail"]', el => (el as HTMLAnchorElement).href).catch(() => "")
+        const title = await card.$eval(SELECTORS.jobTitle, el => el.textContent?.trim() || "").catch(() => "")
+        const company = await card.$eval(SELECTORS.companyName, el => el.textContent?.trim() || "").catch(() => "")
+        const salary = await card.$eval(SELECTORS.salary, el => el.textContent?.trim() || "").catch(() => "")
+        const location = await card.$eval(SELECTORS.location, el => el.textContent?.trim() || "").catch(() => "")
+        const tags = await card.$$eval(SELECTORS.tags, els => els.map(el => el.textContent?.trim() || "")).catch(() => [])
+        const link = await card.$eval(SELECTORS.jobLink, el => (el as HTMLAnchorElement).href).catch(() => "")
 
         if (title && company) {
           jobs.push({
@@ -202,12 +245,14 @@ export class BossAuto {
     try {
       // Navigate to job detail page
       if (job.url) {
-        await this.page.goto(job.url, { waitUntil: "domcontentloaded" })
-        await this.page.waitForTimeout(2000)
+        await withRetry(async () => {
+          await this.page!.goto(job.url, { waitUntil: "domcontentloaded", timeout: 30000 })
+          await this.page!.waitForTimeout(2000)
+        })
       }
 
       // Find and click "立即沟通" button
-      const chatBtn = await this.page.$('button:has-text("立即沟通"), button:has-text("沟通"), [class*="btn-start"], a:has-text("立即沟通")')
+      const chatBtn = await this.page.$(SELECTORS.chatBtn)
       if (!chatBtn) {
         return { success: false, message: "未找到沟通按钮" }
       }
@@ -216,13 +261,13 @@ export class BossAuto {
       await this.page.waitForTimeout(2000)
 
       // Find greeting input and send
-      const chatInput = await this.page.$('textarea[class*="input"], .chat-input textarea, [class*="msg-input"] textarea, textarea')
+      const chatInput = await this.page.$(SELECTORS.chatInput)
       if (chatInput) {
         await chatInput.fill(greeting)
         await this.page.waitForTimeout(500)
 
         // Click send button
-        const sendBtn = await this.page.$('button:has-text("发送"), [class*="btn-send"], button[class*="send"]')
+        const sendBtn = await this.page.$(SELECTORS.sendBtn)
         if (sendBtn) {
           await sendBtn.click()
           await this.page.waitForTimeout(1000)

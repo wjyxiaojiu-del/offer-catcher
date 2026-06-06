@@ -4,15 +4,8 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { CountUp } from "@/components/count-up"
 import { RadarChart } from "@/components/radar-chart"
-
-interface ParsedResume {
-  name: string; email: string; phone: string; skills: string[]
-  education: any[]; experience: any[]; projects: any[]; rawText: string
-}
-
-interface ReportSection {
-  title: string; score: number; feedback: string; improvements: string[]; icon: string
-}
+import { useToast } from "@/components/ui/toast"
+import type { ParsedResume, ReportSection } from "@/types"
 
 export default function JDOptimizePage() {
   const [resume, setResume] = useState<ParsedResume | null>(null)
@@ -21,6 +14,7 @@ export default function JDOptimizePage() {
   const [report, setReport] = useState<{ overall: string; overallScore: number; sections: ReportSection[] } | null>(null)
   const [parsedJob, setParsedJob] = useState<any>(null)
   const router = useRouter()
+  const { toast } = useToast()
 
   useEffect(() => {
     const text = sessionStorage.getItem("resumeText")
@@ -47,10 +41,10 @@ export default function JDOptimizePage() {
         setReport(data.report)
         setParsedJob(data.job)
       } else {
-        alert(data.error || "分析失败")
+        toast(data.error || "分析失败", "error")
       }
     } catch {
-      alert("请求失败，请重试")
+      toast("请求失败，请重试", "error")
     }
     setLoading(false)
   }

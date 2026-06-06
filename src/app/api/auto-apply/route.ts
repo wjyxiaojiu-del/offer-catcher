@@ -1,24 +1,21 @@
 import { NextResponse } from "next/server"
-import { matchResumeToJobs, MatchResult } from "@/lib/matcher"
-import { jobs, Job } from "@/data/jobs"
-
-interface AutoApplyConfig {
-  minScore: number        // 最低匹配分
-  maxApplications: number // 最多投递数
-  locations: string[]     // 期望城市
-  salaryMin: number       // 最低薪资(K)
-  excludeCompanies: string[] // 排除公司
-  jobTypes: string[]      // 岗位类型标签
-}
+import { matchResumeToJobs } from "@/lib/matcher"
+import { jobs } from "@/data/jobs"
+import type { Application, AutoApplyConfig, ParsedResume } from "@/types"
+import { apiError } from "@/lib/api-response"
+import { requireApiAccess } from "@/lib/api-guard"
 
 // In-memory store
-const applications: Map<string, any> = new Map()
+const applications: Map<string, Application> = new Map()
 
 export async function POST(req: Request) {
-  try {
-    const { resume, config }: { resume: any; config: AutoApplyConfig } = await req.json()
+  const authError = requireApiAccess(req)
+  if (authError) return authError
 
-    if (!resume) return NextResponse.json({ error: "No resume data" }, { status: 400 })
+  try {
+    const { resume, config }: { resume: ParsedResume; config: AutoApplyConfig } = await req.json()
+
+    if (!resume) return apiError("缺少简历数据", "MISSING_RESUME", 400)
 
     // Match all jobs
     const results = matchResumeToJobs(resume, jobs)
@@ -49,25 +46,43 @@ export async function POST(req: Request) {
     // Limit number of applications
     const toApply = qualified.slice(0, config.maxApplications)
 
-    // Simulate applying
+    // Simulate applying + persist to DB
     const appliedJobs = toApply.map(result => {
-      const application = {
+      const appData: Application = {
         id: `app-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         jobId: result.job.id,
-        jobTitle: result.job.title,
-        company: result.job.company,
-        location: result.job.location,
-        salary: result.job.salary,
+        jobSnapshot: {
+          title: result.job.title,
+          company: result.job.company,
+          location: result.job.location,
+          salary: result.job.salary,
+        },
         score: result.score,
         status: "已投递",
         appliedAt: new Date().toISOString(),
-        resumeName: resume.name || "匿名",
-        method: "自动投递"
+        method: "自动投递",
       }
-
-      applications.set(application.id, application)
-      return application
+      applications.set(appData.id, appData)
+      return appData
     })
+
+    // Batch persist to DB (graceful fallback)
+    try {
+      const { prisma } = await import("@/lib/db")
+      await prisma.application.createMany({
+        data: appliedJobs.map(a => ({
+          id: a.id,
+          jobId: a.jobId,
+          jobSnapshot: JSON.stringify(a.jobSnapshot),
+          matchScore: a.score || 0,
+          status: a.status,
+          method: a.method,
+          appliedAt: new Date(a.appliedAt),
+        })),
+      })
+    } catch (dbErr) {
+      console.warn("DB batch application save failed:", dbErr)
+    }
 
     return NextResponse.json({
       success: true,
@@ -84,11 +99,14 @@ export async function POST(req: Request) {
     })
   } catch (error) {
     console.error("Auto-apply error:", error)
-    return NextResponse.json({ error: "自动投递失败" }, { status: 500 })
+    return apiError("自动投递失败", "AUTO_APPLY_ERROR", 500)
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const authError = requireApiAccess(req)
+  if (authError) return authError
+
   const allApps = Array.from(applications.values())
   return NextResponse.json({ applications: allApps })
 }

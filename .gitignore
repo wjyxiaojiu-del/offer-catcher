@@ -21,10 +21,17 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+dev.log
+*.log
 
 # local env files
 .env*.local
 .env
+
+# local runtime state
+.browser-state/
+*.db
+*.db-journal
 
 # vercel
 .vercel

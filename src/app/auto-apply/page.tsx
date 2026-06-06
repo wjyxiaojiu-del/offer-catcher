@@ -2,20 +2,8 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-
-interface ParsedResume {
-  name: string; email: string; phone: string; skills: string[]
-  education: any[]; experience: any[]
-}
-
-interface AutoApplyResult {
-  success: boolean
-  totalMatched: number
-  totalQualified: number
-  totalApplied: number
-  applications: any[]
-  skippedJobs: any[]
-}
+import { useToast } from "@/components/ui/toast"
+import type { ParsedResume, AutoApplyResult } from "@/types"
 
 export default function AutoApplyPage() {
   const [resume, setResume] = useState<ParsedResume | null>(null)
@@ -23,6 +11,7 @@ export default function AutoApplyPage() {
   const [result, setResult] = useState<AutoApplyResult | null>(null)
   const [showResult, setShowResult] = useState(false)
   const router = useRouter()
+  const { toast } = useToast()
 
   // Config state
   const [minScore, setMinScore] = useState(60)
@@ -74,7 +63,7 @@ export default function AutoApplyPage() {
         localStorage.setItem("applications", JSON.stringify([...newApps, ...stored]))
       }
     } catch {
-      alert("自动投递失败，请重试")
+      toast("自动投递失败，请重试", "error")
     }
     setLoading(false)
   }

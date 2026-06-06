@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server"
 import { getBossInstance, closeBossInstance } from "@/lib/boss-auto"
+import { requireApiAccess, requireBossAutomation } from "@/lib/api-guard"
 
 // POST /api/boss - Handle different actions
 export async function POST(req: Request) {
+  const authError = requireBossAutomation(req)
+  if (authError) return authError
+
   try {
-    const { action, config, resumeSkills } = await req.json()
+    const { action, config, resumeSkills, resumeId: bodyResumeId } = await req.json()
 
     switch (action) {
       case "launch": {
@@ -38,11 +42,46 @@ export async function POST(req: Request) {
       case "apply": {
         const boss = await getBossInstance()
         const results = await boss.batchApply(config, resumeSkills || [])
+
+        // Persist successful applications to DB
+        const { prisma } = await import("@/lib/db")
+        const resumeId = bodyResumeId || undefined
+        const sentJobs = results.filter((r: any) => r.status === "sent")
+        if (sentJobs.length > 0) {
+          try {
+            await prisma.$transaction(
+              sentJobs.map((job: any) =>
+                prisma.application.create({
+                  data: {
+                    resumeId,
+                    jobSnapshot: JSON.stringify({
+                      title: job.title,
+                      company: job.company,
+                      location: job.location,
+                      salary: job.salary,
+                      experience: job.experience,
+                      education: job.education,
+                      description: job.description,
+                      url: job.url,
+                      hrName: job.hrName,
+                    }),
+                    status: "applied",
+                    method: "boss_auto",
+                    notes: job.message || "BOSS 直聘自动投递",
+                  },
+                })
+              )
+            )
+          } catch (dbErr) {
+            console.warn("BOSS apply DB persist failed:", dbErr)
+          }
+        }
+
         return NextResponse.json({
           results,
           total: results.length,
-          sent: results.filter(r => r.status === "sent").length,
-          failed: results.filter(r => r.status === "error").length,
+          sent: results.filter((r: any) => r.status === "sent").length,
+          failed: results.filter((r: any) => r.status === "error").length,
         })
       }
 
@@ -66,10 +105,13 @@ export async function POST(req: Request) {
   }
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const authError = requireApiAccess(req)
+  if (authError) return authError
+
   return NextResponse.json({
     service: "BOSS 直聘自动投递",
-    status: "running",
+    status: process.env.BOSS_AUTOMATION_ENABLED === "true" ? "enabled" : "disabled",
     endpoints: {
       launch: "POST { action: 'launch' } - 启动浏览器，获取登录二维码",
       "login-status": "POST { action: 'login-status' } - 检查登录状态",

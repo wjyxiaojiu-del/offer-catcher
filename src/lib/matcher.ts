@@ -1,47 +1,93 @@
-import { Job } from "@/data/jobs"
-import { ParsedResume } from "./resume-parser"
-
-export interface MatchResult {
-  job: Job
-  score: number
-  skillMatch: number
-  educationMatch: number
-  experienceMatch: number
-  keywordMatch: number
-  matchedSkills: string[]
-  missingSkills: string[]
-  suggestions: string[]
-  aiAnalysis: string
-  matchLevel: "excellent" | "good" | "fair" | "weak"
-  aiPowered?: boolean
-}
+import type { Job } from "@/types"
+import type { ParsedResume, MatchResult } from "@/types"
 
 // Skill synonym groups for fuzzy matching
 const SKILL_SYNONYMS: Record<string, string[]> = {
-  "react": ["reactjs", "react.js"],
-  "vue": ["vuejs", "vue.js", "vue3", "vue2"],
-  "angular": ["angularjs"],
+  // Frontend
+  "react": ["reactjs", "react.js", "react hooks"],
+  "vue": ["vuejs", "vue.js", "vue3", "vue2", "nuxt"],
+  "angular": ["angularjs", "angular2"],
+  "next.js": ["nextjs", "next"],
+  "svelte": ["sveltekit"],
+  "redux": ["状态管理", "zustand", "pinia", "mobx"],
+  "webpack": ["vite", "打包工具", "bundler", "rollup", "esbuild", "turbopack"],
+  "tailwind": ["tailwindcss", "css框架", "unoCSS"],
+  "jest": ["vitest", "测试框架", "testing library", "playwright test", "cypress"],
+  // Backend
   "node": ["nodejs", "node.js"],
+  "express": ["fastify", "koa", "nest", "hapi"],
+  "django": ["flask", "fastapi", "python后端"],
+  "spring": ["spring boot", "springboot", "java后端"],
+  "graphql": ["gql", "apollo"],
+  "rest api": ["restful", "api设计"],
+  "grpc": ["protobuf"],
+  "微服务": ["microservices", "服务治理", "分布式"],
+  // Languages
   "python": ["py"],
-  "javascript": ["js", "es6", "es2015"],
+  "javascript": ["js", "es6", "es2015", "ecmascript"],
   "typescript": ["ts"],
-  "java": ["jdk", "spring"],
+  "java": ["jdk", "jvm"],
   "c++": ["cpp", "c plus plus"],
-  "c#": ["csharp", "c sharp"],
-  "sql": ["mysql", "postgresql", "sqlite", "oracle"],
+  "c#": ["csharp", "c sharp", "dotnet", ".net"],
+  "go": ["golang"],
+  "rust": ["rustlang"],
+  "kotlin": ["kt"],
+  "swift": ["swiftui"],
+  // Database
+  "sql": ["mysql", "postgresql", "sqlite", "oracle", "mssql", "mariadb"],
+  "mongodb": ["mongo", "nosql", "文档数据库"],
+  "redis": ["缓存", "cache", "memcached"],
+  "elasticsearch": ["es", "搜索", "elk"],
+  "postgres": ["postgresql", "pg", "关系型数据库"],
+  "prisma": ["orm", "typeorm", "sequelize", "drizzle"],
+  // DevOps
+  "docker": ["容器", "container", "容器化"],
+  "kubernetes": ["k8s", "容器编排"],
+  "aws": ["amazon web services", "云服务", "s3", "ec2", "lambda"],
+  "ci/cd": ["持续集成", "持续部署", "github actions", "gitlab ci"],
+  "nginx": ["反向代理", "web服务器"],
+  "prometheus": ["监控", "grafana", "可观测性", "observability"],
+  "terraform": ["iac", "基础设施即代码", "pulumi"],
+  "linux": ["shell", "bash", "ubuntu", "centos", "命令行"],
+  // AI/ML
   "machine learning": ["ml", "机器学习"],
   "deep learning": ["dl", "深度学习"],
   "natural language processing": ["nlp", "自然语言处理"],
   "computer vision": ["cv", "计算机视觉"],
-  "docker": ["容器", "container"],
-  "kubernetes": ["k8s"],
-  "aws": ["amazon web services"],
-  "git": ["github", "gitlab", "版本控制"],
-  "figma": ["figma design"],
-  "photoshop": ["ps"],
-  "数据分析": ["data analysis", "data analytics"],
-  "大模型": ["llm", "large language model", "大语言模型"],
-  "transformer": ["attention", "self-attention"],
+  "pytorch": ["torch"],
+  "tensorflow": ["tf", "keras"],
+  "scikit-learn": ["sklearn", "机器学习库"],
+  "pandas": ["数据处理", "numpy", "数据分析库"],
+  "huggingface": ["transformers库", "预训练模型"],
+  "langchain": ["llm应用", "agent框架"],
+  "rag": ["检索增强生成", "知识检索"],
+  "fine-tuning": ["微调", "lora", "sft", "指令微调"],
+  "cuda": ["gpu", "并行计算", "nvidia"],
+  // 大模型
+  "大模型": ["llm", "large language model", "大语言模型", "gpt", "chatgpt"],
+  "transformer": ["attention", "self-attention", "多头注意力"],
+  // Mobile
+  "flutter": ["dart"],
+  "react native": ["rn", "跨平台移动开发"],
+  "uniapp": ["跨端开发", "小程序开发"],
+  "小程序": ["微信小程序", "miniapp", "支付宝小程序"],
+  // Tools
+  "git": ["github", "gitlab", "版本控制", "git版本管理"],
+  "figma": ["figma design", "设计工具"],
+  "photoshop": ["ps", "adobe"],
+  // Domain-specific
+  "数据分析": ["data analysis", "data analytics", "bi", "商业智能"],
+  "agile": ["scrum", "敏捷开发", "kanban", "项目管理"],
+  // Chinese skill mappings
+  "前端开发": ["frontend", "web前端", "h5"],
+  "后端开发": ["backend", "服务端", "server-side"],
+  "全栈开发": ["fullstack", "全栈"],
+  "自动化测试": ["test automation", "qa", "质量保障", "selenium"],
+  "性能优化": ["performance", "profiling", "benchmark"],
+}
+
+function normalizeSkill(s: string): string {
+  return s.toLowerCase().replace(/[.\-_]/g, "").trim()
 }
 
 export function matchResumeToJobs(resume: ParsedResume, jobs: Job[]): MatchResult[] {
@@ -90,44 +136,72 @@ export function matchResumeToJobs(resume: ParsedResume, jobs: Job[]): MatchResul
   }).sort((a, b) => b.score - a.score)
 }
 
+function isDirectMatch(resumeSkill: string, jobSkill: string): boolean {
+  const normalizedR = normalizeSkill(resumeSkill)
+  const normalizedJ = normalizeSkill(jobSkill)
+
+  // Exact equality
+  if (normalizedR === normalizedJ) return true
+
+  // Mutual inclusion with length guard — prevents Java ↔ JavaScript contamination
+  const longer = Math.max(normalizedR.length, normalizedJ.length)
+  const shorter = Math.min(normalizedR.length, normalizedJ.length)
+  if (longer - shorter > 2 && longer / shorter > 1.3) return false
+
+  return normalizedR.includes(normalizedJ) || normalizedJ.includes(normalizedR)
+}
+
+function isSynonymMatch(jobSkill: string, resumeSkill: string): boolean {
+  const jobSkillLower = normalizeSkill(jobSkill)
+  const resumeSkillLower = normalizeSkill(resumeSkill)
+
+  for (const [canonical, synonyms] of Object.entries(SKILL_SYNONYMS)) {
+    const allForms = [normalizeSkill(canonical), ...synonyms.map(normalizeSkill)]
+    const jobMatchesForm = allForms.some(f => f === jobSkillLower)
+    const resumeMatchesForm = allForms.some(f => f === resumeSkillLower)
+    if (jobMatchesForm && resumeMatchesForm) {
+      return true
+    }
+  }
+  return false
+}
+
 function calculateSkillMatch(resumeSkills: string[], jobSkills: string[], rawText: string): { score: number; matched: string[]; missing: string[] } {
   if (jobSkills.length === 0) return { score: 50, matched: [], missing: [] }
 
-  const normalizedResume = resumeSkills.map(s => s.toLowerCase())
+  const normalizedResume = resumeSkills.map(normalizeSkill)
   const lowerText = rawText.toLowerCase()
   const matched: string[] = []
   const missing: string[] = []
 
   for (const jobSkill of jobSkills) {
-    const jobSkillLower = jobSkill.toLowerCase()
+    const jobSkillLower = normalizeSkill(jobSkill)
     let isMatch = false
 
-    // Direct match
-    if (normalizedResume.some(rs => rs.includes(jobSkillLower) || jobSkillLower.includes(rs))) {
+    // Direct match with length guard
+    if (normalizedResume.some(rs => isDirectMatch(rs, jobSkillLower))) {
       isMatch = true
     }
 
     // Synonym match
     if (!isMatch) {
-      for (const [canonical, synonyms] of Object.entries(SKILL_SYNONYMS)) {
-        const allForms = [canonical, ...synonyms]
-        const jobMatchesForm = allForms.some(f => f === jobSkillLower || jobSkillLower.includes(f))
-        const resumeMatchesForm = normalizedResume.some(rs => allForms.some(f => rs.includes(f) || f.includes(rs)))
-        if (jobMatchesForm && resumeMatchesForm) {
-          isMatch = true
-          break
-        }
+      if (normalizedResume.some(rs => isSynonymMatch(jobSkill, rs))) {
+        isMatch = true
       }
     }
 
-    // Fuzzy match in raw text
-    if (!isMatch && lowerText.includes(jobSkillLower)) {
-      isMatch = true
+    // Fuzzy match in raw text (word boundary)
+    if (!isMatch) {
+      const regex = new RegExp(`\\b${escapeRegex(jobSkillLower)}\\b`, "i")
+      if (regex.test(lowerText)) {
+        isMatch = true
+      }
     }
 
-    // Levenshtein for typo tolerance
+    // Levenshtein for typo tolerance (tightened threshold: 1 for words > 4 chars)
     if (!isMatch) {
-      isMatch = normalizedResume.some(rs => levenshteinDistance(rs, jobSkillLower) <= 2 && jobSkillLower.length > 3)
+      const threshold = jobSkillLower.length > 4 ? 1 : 2
+      isMatch = normalizedResume.some(rs => levenshteinDistance(rs, jobSkillLower) <= threshold && jobSkillLower.length > 3)
     }
 
     if (isMatch) {
@@ -141,14 +215,37 @@ function calculateSkillMatch(resumeSkills: string[], jobSkills: string[], rawTex
   return { score, matched, missing }
 }
 
-function calculateEducationMatch(educations: any[], jobEducation: string): number {
+function calculateEducationMatch(educations: { degree: string; school?: string }[], jobEducation: string): number {
   if (educations.length === 0) return 30
 
-  const degree = educations[0]?.degree || ""
   const eduLevel: Record<string, number> = { "博士": 5, "硕士": 4, "研究生": 4, "本科": 3, "学士": 3, "专科": 2, "大专": 2 }
   const jobLevel: Record<string, number> = { "硕士及以上": 4, "本科及以上": 3, "博士": 5, "大专及以上": 2, "不限": 0 }
 
-  const userLevel = eduLevel[degree] || 3
+  // Find highest degree across all education entries
+  let userLevel = 0
+  for (const edu of educations) {
+    for (const [key, val] of Object.entries(eduLevel)) {
+      if (edu.degree.includes(key)) {
+        userLevel = Math.max(userLevel, val)
+      }
+    }
+  }
+  if (userLevel === 0) userLevel = 3 // default to bachelor level
+
+  // School tier bonus
+  const schoolTiers: Record<string, number> = {
+    "双一流": 5, "985": 5, "211": 4, "一本": 3, "重点": 3,
+    "University": 3, "College": 2,
+  }
+  let schoolBonus = 0
+  for (const edu of educations) {
+    if (!edu.school) continue
+    for (const [key, val] of Object.entries(schoolTiers)) {
+      if (edu.school.includes(key)) {
+        schoolBonus = Math.max(schoolBonus, val)
+      }
+    }
+  }
 
   let reqLevel = 3
   for (const [key, val] of Object.entries(jobLevel)) {
@@ -156,45 +253,171 @@ function calculateEducationMatch(educations: any[], jobEducation: string): numbe
   }
 
   if (reqLevel === 0) return 80
-  if (userLevel >= reqLevel) return 95
-  if (userLevel === reqLevel - 1) return 55
-  if (userLevel === reqLevel - 2) return 25
-  return 15
+  let score: number
+  if (userLevel >= reqLevel) score = 95
+  else if (userLevel === reqLevel - 1) score = 55
+  else if (userLevel === reqLevel - 2) score = 25
+  else score = 15
+
+  // Add school bonus (cap at 100)
+  if (schoolBonus > 0 && userLevel >= reqLevel) {
+    score = Math.min(score + Math.min(schoolBonus, 5), 100)
+  }
+
+  return score
 }
 
-function calculateExperienceMatch(experiences: any[], jobExperience: string): number {
+function parseDateRange(duration: string, startDate?: string, endDate?: string): number {
+  // Parse "YYYY.MM-YYYY.MM" or "YYYY-MM-YYYY-MM" format
+  const rangeMatch = duration.match(/(\d{4})\s*[.\-年月]\s*(\d{1,2})?\s*[-–至到]\s*(\d{4})\s*[.\-年月]?\s*(\d{1,2})?/)
+  if (rangeMatch) {
+    const y1 = parseInt(rangeMatch[1])
+    const m1 = parseInt(rangeMatch[2] || "7") // default to mid-year
+    const y2 = parseInt(rangeMatch[3])
+    const m2 = parseInt(rangeMatch[4] || (m1 === 7 ? "7" : m1.toString()))
+    if (!isNaN(y1) && !isNaN(y2) && !isNaN(m1) && !isNaN(m2)) {
+      return (y2 - y1) * 12 + (m2 - m1)
+    }
+  }
+
+  // Parse single date fields
+  if (startDate && endDate) {
+    const sd = startDate.match(/(\d{4})[.\-年月]?\s*(\d{1,2})?/)
+    const ed = endDate.match(/(\d{4})[.\-年月]?\s*(\d{1,2})?/)
+    if (sd && ed) {
+      const y1 = parseInt(sd[1])
+      const m1 = parseInt(sd[2] || "7")
+      const y2 = parseInt(ed[1])
+      const m2 = parseInt(ed[2] || "7")
+      if (!isNaN(y1) && !isNaN(y2) && !isNaN(m1) && !isNaN(m2)) {
+        return (y2 - y1) * 12 + (m2 - m1)
+      }
+    }
+  }
+
+  // Present marker (e.g., "至今", "present", "now")
+  if (startDate && /至今|present|now/i.test(duration)) {
+    const sd = startDate.match(/(\d{4})[.\-年月]?\s*(\d{1,2})?/)
+    if (sd) {
+      const y1 = parseInt(sd[1])
+      const m1 = parseInt(sd[2] || "7")
+      if (!isNaN(y1) && !isNaN(m1)) {
+        const now = new Date()
+        const totalMonths = (now.getFullYear() - y1) * 12 + (now.getMonth() + 1 - m1)
+        return Math.max(totalMonths, 1)
+      }
+    }
+  }
+
+  // Year-only format: "2022年" or "2022.09"
+  const singleDate = duration.match(/(\d{4})[.\-年]/)
+  if (singleDate) {
+    const year = parseInt(singleDate[1])
+    if (!isNaN(year)) {
+      const now = new Date()
+      return Math.max((now.getFullYear() - year) * 12, 1)
+    }
+  }
+
+  return 0
+}
+
+function calculateExperienceMatch(experiences: { duration: string; startDate?: string; endDate?: string; description?: string }[], jobExperience: string): number {
   const yearMatch = jobExperience.match(/(\d+)/)
   const requiredYears = yearMatch ? parseInt(yearMatch[1]) : 0
 
   if (requiredYears === 0) return 85
 
-  const userYears = experiences.length * 1.5
-  if (userYears >= requiredYears * 1.5) return 95
-  if (userYears >= requiredYears) return 85
-  if (userYears >= requiredYears * 0.5) return 60
-  if (userYears > 0) return 40
+  // Calculate total months from actual date ranges
+  let totalMonths = 0
+  for (const exp of experiences) {
+    const months = parseDateRange(exp.duration, exp.startDate, exp.endDate)
+    if (months > 0) {
+      totalMonths += months
+    }
+  }
+
+  // Fallback: if no dates parsable, estimate 6 months per experience entry
+  if (totalMonths === 0) {
+    totalMonths = experiences.length * 6
+  }
+
+  const requiredMonths = requiredYears * 12
+  const ratio = totalMonths / Math.max(requiredMonths, 1)
+
+  if (ratio >= 1.5) return 95
+  if (ratio >= 1.0) return 85
+  if (ratio >= 0.5) return 60
+  if (totalMonths > 0) return 40
   return 20
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
 function calculateKeywordMatch(text: string, job: Job): number {
   const lowerText = text.toLowerCase()
 
-  // Extract meaningful keywords from job
-  const jobKeywords = [
-    ...job.skills,
-    ...job.requirements.flatMap(r => r.split(/[，,、\s]+/).filter(w => w.length > 1)),
-    ...job.description.split(/[，,、\s]+/).filter(w => w.length > 1)
-  ]
+  // Tokenize text into words for word-boundary matching
+  const words = new Set(lowerText.split(/[\s,，、.。;；:：!！?？()（）\[\]{}]+/).filter(w => w.length > 1))
 
-  // Deduplicate
-  const uniqueKeywords = Array.from(new Set(jobKeywords.map(k => k.toLowerCase())))
+  // Collect keywords from job: required skills (2x weight), nice-to-have (1x),
+  // requirements keywords, and description keywords
+  const weightedKeywords: { word: string; weight: number }[] = []
 
-  let matches = 0
-  for (const kw of uniqueKeywords) {
-    if (lowerText.includes(kw)) matches++
+  for (const skill of job.requiredSkills ?? job.skills) {
+    weightedKeywords.push({ word: skill.toLowerCase(), weight: 2 })
+  }
+  for (const skill of job.niceToHaveSkills ?? []) {
+    weightedKeywords.push({ word: skill.toLowerCase(), weight: 1 })
   }
 
-  return Math.min(Math.round((matches / Math.max(uniqueKeywords.length, 1)) * 100), 100)
+  // Extract additional keywords from requirements and description
+  const descWords = [
+    ...job.requirements.flatMap(r => r.split(/[，,、\s]+/).filter(w => w.length > 1)),
+    ...job.description.split(/[，,、\s]+/).filter(w => w.length > 1)
+  ].map(w => w.toLowerCase())
+    .filter(w => w.length > 2 && !["优先", "熟悉", "了解", "负责", "具有", "具备", "以上", "经验", "能力"].includes(w))
+
+  for (const w of descWords) {
+    // Don't double-count words already in skills
+    if (!weightedKeywords.some(k => k.word === w)) {
+      weightedKeywords.push({ word: w, weight: 1 })
+    }
+  }
+
+  // Deduplicate
+  const seen = new Set<string>()
+  const unique = weightedKeywords.filter(k => {
+    if (seen.has(k.word)) return false
+    seen.add(k.word)
+    return true
+  })
+
+  let totalWeight = 0
+  let matchedWeight = 0
+
+  for (const kw of unique) {
+    totalWeight += kw.weight
+    // Try word boundary match first (most accurate)
+    const boundaryRegex = new RegExp(`\\b${escapeRegex(kw.word)}\\b`, "i")
+    if (boundaryRegex.test(lowerText)) {
+      matchedWeight += kw.weight
+      continue
+    }
+    // Fallback: check if text contains this word as substring (for CJK)
+    if (/[一-龥]/.test(kw.word) && lowerText.includes(kw.word)) {
+      matchedWeight += kw.weight * 0.7 // partial credit for CJK substring match
+      continue
+    }
+    // Check word-level match in tokenized text
+    if (words.has(kw.word)) {
+      matchedWeight += kw.weight * 0.8
+    }
+  }
+
+  return Math.min(Math.round((matchedWeight / Math.max(totalWeight, 1)) * 100), 100)
 }
 
 function generateSuggestions(resume: ParsedResume, job: Job, skillResult: { matched: string[]; missing: string[] }): string[] {

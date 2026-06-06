@@ -2,11 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
-
-interface BossJob {
-  title: string; company: string; salary: string; location: string
-  experience: string; education: string; status: string; message?: string; url: string
-}
+import type { BossJob } from "@/types"
 
 type Step = "init" | "login" | "config" | "searching" | "results" | "applying" | "done"
 
@@ -38,6 +34,7 @@ export default function BossPage() {
       .then(r => r.json())
       .then(data => {
         setResume(data.resume)
+        if (data.resumeId) sessionStorage.setItem("resumeId", data.resumeId)
         if (data.resume?.skills?.length > 0) {
           setKeywords(data.resume.skills.slice(0, 3).join(" "))
         }
@@ -108,10 +105,12 @@ export default function BossPage() {
     setLoading(true)
     setError("")
     try {
+      const resumeId = sessionStorage.getItem("resumeId")
       const data = await apiCall({
         action: "apply",
         config: { keywords, city, maxApply, greeting: greeting || undefined, minSalary: minSalary || undefined },
         resumeSkills: resume?.skills || [],
+        resumeId,
       })
       setResults(data.results || [])
       setStep("done")
