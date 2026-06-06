@@ -156,11 +156,14 @@ export default function AgentPage() {
 
   return (
     <div className="flex h-[calc(100vh-56px)] bg-gray-50">
-      {/* Mobile Sidebar Overlay */}
+      {/* Mobile Sidebar Overlay — button for a11y (keyboard/screen readers) */}
       {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/30 z-40 lg:hidden"
+        <button
+          className="fixed inset-0 bg-black/30 z-40 lg:hidden cursor-default"
           onClick={() => setSidebarOpen(false)}
+          onKeyDown={(e) => { if (e.key === "Escape") setSidebarOpen(false) }}
+          aria-label="关闭侧边栏"
+          tabIndex={0}
         />
       )}
 

@@ -17,48 +17,33 @@ export async function POST(req: Request) {
       )
     }
 
-    // 检查是否已存在
-    let job = await prisma.job.findFirst({
-      where: {
+    // Atomic upsert: avoids race condition on concurrent duplicate submissions
+    const job = await prisma.job.upsert({
+      where: { title_company: { title: jobData.title, company: jobData.company } },
+      create: {
         title: jobData.title,
         company: jobData.company,
+        location: jobData.location || "",
+        salaryText: jobData.salary || "",
+        experience: jobData.experience || "",
+        education: jobData.education || "",
+        description: jobData.description || "",
+        requirements: JSON.stringify(jobData.requirements || []),
+        skills: JSON.stringify(jobData.skills || []),
+        applyUrl: jobData.url || "",
+        source: "boss_extension",
+      },
+      update: {
+        location: jobData.location || undefined,
+        salaryText: jobData.salary || undefined,
+        experience: jobData.experience || undefined,
+        education: jobData.education || undefined,
+        description: jobData.description || undefined,
+        requirements: JSON.stringify(jobData.requirements || []),
+        skills: JSON.stringify(jobData.skills || []),
+        applyUrl: jobData.url || undefined,
       },
     })
-
-    if (job) {
-      // 更新现有岗位
-      job = await prisma.job.update({
-        where: { id: job.id },
-        data: {
-          location: jobData.location || job.location,
-          salaryText: jobData.salary || job.salaryText,
-          experience: jobData.experience || job.experience,
-          education: jobData.education || job.education,
-          description: jobData.description || job.description,
-          requirements: JSON.stringify(jobData.requirements || []),
-          skills: JSON.stringify(jobData.skills || []),
-          applyUrl: jobData.url || job.applyUrl,
-          updatedAt: new Date(),
-        },
-      })
-    } else {
-      // 创建新岗位
-      job = await prisma.job.create({
-        data: {
-          title: jobData.title,
-          company: jobData.company,
-          location: jobData.location || "",
-          salaryText: jobData.salary || "",
-          experience: jobData.experience || "",
-          education: jobData.education || "",
-          description: jobData.description || "",
-          requirements: JSON.stringify(jobData.requirements || []),
-          skills: JSON.stringify(jobData.skills || []),
-          applyUrl: jobData.url || "",
-          source: "boss_extension",
-        },
-      })
-    }
 
     return NextResponse.json({ job })
   } catch (error: any) {

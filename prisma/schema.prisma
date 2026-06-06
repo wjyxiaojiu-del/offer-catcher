@@ -111,7 +111,7 @@ model Job {
 
   applications Application[]
 
-  @@index([title, company])
+  @@unique([title, company])
 }
 
 model Application {

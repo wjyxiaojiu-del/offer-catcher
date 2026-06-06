@@ -58,7 +58,7 @@ export async function callLLM(systemPrompt: string, userPrompt: string, retries 
 
 // ============ Robust JSON Extraction ============
 
-function extractJSON(text: string): string {
+export function extractJSON(text: string): string {
   const match = text.match(/```(?:json)?\s*([\s\S]*?)```/)
   if (match) return match[1].trim()
   const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/)
@@ -78,7 +78,7 @@ export function escapeUserContent(text: string, maxLen = 8000): string {
   return s
 }
 
-function sanitizeJSON(text: string): string {
+export function sanitizeJSON(text: string): string {
   let s = text.trim()
 
   // Remove markdown fences if still present

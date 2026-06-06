@@ -38,31 +38,24 @@ export async function POST(req: Request) {
       )
     }
 
-    // 保存岗位信息
-    let job = await prisma.job.findFirst({
-      where: {
+    // Upsert: find-or-create in one atomic call (avoids race between concurrent requests)
+    const job = await prisma.job.upsert({
+      where: { title_company: { title: jobData.title, company: jobData.company } },
+      create: {
         title: jobData.title,
         company: jobData.company,
+        location: jobData.location || "",
+        salaryText: jobData.salary || "",
+        experience: jobData.experience || "",
+        education: jobData.education || "",
+        description: jobData.description || "",
+        requirements: JSON.stringify(jobData.requirements || []),
+        skills: JSON.stringify(jobData.skills || []),
+        applyUrl: jobData.url || "",
+        source: "boss_extension",
       },
+      update: {},
     })
-
-    if (!job) {
-      job = await prisma.job.create({
-        data: {
-          title: jobData.title,
-          company: jobData.company,
-          location: jobData.location || "",
-          salaryText: jobData.salary || "",
-          experience: jobData.experience || "",
-          education: jobData.education || "",
-          description: jobData.description || "",
-          requirements: JSON.stringify(jobData.requirements || []),
-          skills: JSON.stringify(jobData.skills || []),
-          applyUrl: jobData.url || "",
-          source: "boss_extension",
-        },
-      })
-    }
 
     // 创建投递记录
     const application = await prisma.application.create({

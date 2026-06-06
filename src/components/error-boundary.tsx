@@ -39,7 +39,9 @@ function DefaultFallback({ error, onReset }: { error: Error | null; onReset: () 
         <div className="text-4xl mb-4">&#x26A0;&#xFE0F;</div>
         <h2 className="text-xl font-bold mb-2">页面出了点问题</h2>
         <p className="text-sm text-gray-500 mb-4">
-          {error?.message ?? "发生了未知错误"}
+          {process.env.NODE_ENV === "development"
+            ? (error?.message ?? "发生了未知错误")
+            : "页面发生错误，请刷新重试"}
         </p>
         <button
           onClick={onReset}
