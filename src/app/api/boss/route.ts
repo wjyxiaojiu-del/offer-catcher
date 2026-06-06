@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import { getBossInstance, closeBossInstance } from "@/lib/boss-auto"
 import { requireApiAccess, requireBossAutomation } from "@/lib/api-guard"
+import { apiError } from "@/lib/api-response"
+import { parseBody, BossBodySchema } from "@/lib/schemas"
 
 // POST /api/boss - Handle different actions
 export async function POST(req: Request) {
@@ -8,7 +10,9 @@ export async function POST(req: Request) {
   if (authError) return authError
 
   try {
-    const { action, config, resumeSkills, resumeId: bodyResumeId } = await req.json()
+    const parsed = await parseBody(req, BossBodySchema)
+    if (!parsed.ok) return apiError(parsed.error, "INVALID_INPUT", 400)
+    const { action, config, resumeSkills, resumeId: bodyResumeId } = parsed.data
 
     switch (action) {
       case "launch": {

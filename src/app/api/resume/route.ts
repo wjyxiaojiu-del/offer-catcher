@@ -132,8 +132,8 @@ export async function POST(req: Request) {
       }
       text = await extractTextFromFile(file)
     } else {
-      const body = await req.json()
-      text = body.text
+      const body = await req.json().catch(() => ({}))
+      text = typeof body?.text === "string" ? body.text : ""
     }
 
     if (!text || text.trim().length === 0) {

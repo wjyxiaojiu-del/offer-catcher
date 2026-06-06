@@ -2,6 +2,8 @@ import { NextResponse } from "next/server"
 import { CareerAgent } from "@/lib/agent/career-agent"
 import { aiOptimizeResume } from "@/lib/ai"
 import { requireApiAccess } from "@/lib/api-guard"
+import { apiError } from "@/lib/api-response"
+import { parseBody, JdOptimizeBodySchema } from "@/lib/schemas"
 import type { ParsedResume } from "@/types"
 
 export async function POST(req: Request) {
@@ -9,27 +11,10 @@ export async function POST(req: Request) {
   if (authError) return authError
 
   try {
-    const {
-      resume,
-      jdText,
-      sessionId,
-    }: {
-      resume: ParsedResume
-      jdText: string
-      sessionId?: string
-    } = await req.json()
-
-    if (!resume) {
-      return NextResponse.json({ error: "缺少简历数据" }, { status: 400 })
-    }
-    if (!jdText || jdText.trim().length < 10) {
-      return NextResponse.json(
-        { error: "JD 内容过短，请粘贴完整的岗位描述" },
-        { status: 400 }
-      )
-    }
-
-    let targetResume = resume
+    const parsed = await parseBody(req, JdOptimizeBodySchema)
+    if (!parsed.ok) return apiError(parsed.error, "INVALID_INPUT", 400)
+    const { jdText, sessionId } = parsed.data
+    let targetResume = parsed.data.resume as ParsedResume
 
     // Load from agent memory if sessionId provided
     if (sessionId) {

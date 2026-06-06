@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server"
 import { matchResumeToJobs } from "@/lib/matcher"
 import { jobs } from "@/data/jobs"
-import type { Application, AutoApplyConfig, ParsedResume } from "@/types"
+import type { Application, ParsedResume } from "@/types"
 import { apiError } from "@/lib/api-response"
 import { requireApiAccess } from "@/lib/api-guard"
+import { parseBody, AutoApplyBodySchema } from "@/lib/schemas"
 
 // In-memory store
 const applications: Map<string, Application> = new Map()
@@ -13,9 +14,10 @@ export async function POST(req: Request) {
   if (authError) return authError
 
   try {
-    const { resume, config }: { resume: ParsedResume; config: AutoApplyConfig } = await req.json()
-
-    if (!resume) return apiError("缺少简历数据", "MISSING_RESUME", 400)
+    const parsed = await parseBody(req, AutoApplyBodySchema)
+    if (!parsed.ok) return apiError(parsed.error, "INVALID_INPUT", 400)
+    const { config } = parsed.data
+    const resume = parsed.data.resume as ParsedResume
 
     // Match all jobs
     const results = matchResumeToJobs(resume, jobs)

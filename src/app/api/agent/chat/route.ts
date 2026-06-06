@@ -1,6 +1,7 @@
 import { CareerAgent } from "@/lib/agent/career-agent"
 import { withTimeout } from "@/lib/utils"
 import { requireApiAccess } from "@/lib/api-guard"
+import { AgentChatBodySchema } from "@/lib/schemas"
 
 export const runtime = "nodejs"
 
@@ -8,9 +9,9 @@ export async function POST(req: Request) {
   const authError = requireApiAccess(req, { rateLimitKind: "ai" })
   if (authError) return authError
 
-  let body: { message?: string; sessionId?: string; resumeText?: string }
+  let raw: unknown
   try {
-    body = await req.json()
+    raw = await req.json()
   } catch {
     return new Response(
       `event: error\ndata: ${JSON.stringify({ message: "请求格式错误" })}\n\n`,
@@ -18,15 +19,17 @@ export async function POST(req: Request) {
     )
   }
 
-  const { message, resumeText } = body
-  const sessionId = body.sessionId || crypto.randomUUID()
-
-  if (!message || !message.trim()) {
+  const parsed = AgentChatBodySchema.safeParse(raw)
+  if (!parsed.success) {
+    const msg = parsed.error.issues[0]?.message || "参数校验失败"
     return new Response(
-      `event: error\ndata: ${JSON.stringify({ message: "消息不能为空" })}\n\n`,
+      `event: error\ndata: ${JSON.stringify({ message: msg })}\n\n`,
       { status: 400, headers: { "Content-Type": "text/event-stream; charset=utf-8" } }
     )
   }
+
+  const { message, resumeText } = parsed.data
+  const sessionId = parsed.data.sessionId || crypto.randomUUID()
 
   const encoder = new TextEncoder()
 
