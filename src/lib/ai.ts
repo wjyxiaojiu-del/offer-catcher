@@ -255,7 +255,11 @@ export async function aiRecognizeIntent(
 ): Promise<{ intent: string; params: Record<string, unknown>; confidence: number }> {
   const systemPrompt = INTENT_SYSTEM_PROMPT
 
-  const userPrompt = `历史对话:\n${history.slice(-3).join("\n")}\n\n当前输入: ${escapeUserContent(userInput)}\n\n请识别用户意图，输出JSON。`
+  // Escape each history line individually too — joining unescaped history
+  // into the prompt would let an earlier turn smuggle in <RESUME_CONTENT>
+  // / <JOB_DESCRIPTION> tags and bypass the single-turn injection guard.
+  const safeHistory = history.slice(-3).map((h) => escapeUserContent(h, 1000)).join("\n")
+  const userPrompt = `历史对话:\n${safeHistory}\n\n当前输入: ${escapeUserContent(userInput)}\n\n请识别用户意图，输出JSON。`
 
   const result = await chatWithRetry(systemPrompt, userPrompt)
   try {

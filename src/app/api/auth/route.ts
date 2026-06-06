@@ -4,6 +4,7 @@ import {
   hasConfiguredAccessToken,
   isValidAccessToken,
   makeAccessCookie,
+  rateLimit,
 } from "@/lib/api-guard"
 import { apiError } from "@/lib/api-response"
 
@@ -15,6 +16,11 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  // Throttle login attempts (per-IP) so a weak token can't be brute-forced.
+  // Auth predates API access so we can't use requireApiAccess; rateLimit alone.
+  const limited = rateLimit(req, "general")
+  if (limited) return limited
+
   const { token } = await req.json().catch(() => ({ token: "" }))
 
   if (!hasConfiguredAccessToken()) {

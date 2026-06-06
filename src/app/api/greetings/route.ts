@@ -82,7 +82,7 @@ ${jobInfo}
     return NextResponse.json(
       {
         greeting: `您好，我对${jobData?.title || "该"}岗位很感兴趣，希望有机会沟通。`,
-        error: error.message,
+        error: "AI 生成失败，已降级为默认招呼",
       },
       { status: 200 } // 降级处理，不返回错误
     )

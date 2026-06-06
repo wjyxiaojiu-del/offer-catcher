@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   } catch (error: any) {
     console.error("Get applications error:", error)
     return NextResponse.json(
-      { error: error.message || "获取投递记录失败" },
+      { error: "获取投递记录失败" },
       { status: 500 }
     )
   }
@@ -90,7 +90,7 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("Create application error:", error)
     return NextResponse.json(
-      { error: error.message || "记录投递失败" },
+      { error: "记录投递失败" },
       { status: 500 }
     )
   }

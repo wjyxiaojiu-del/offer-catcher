@@ -3,7 +3,7 @@ import { parseResume } from "@/lib/resume-parser"
 import { withTimeout, sanitizeText } from "@/lib/utils"
 import { apiError } from "@/lib/api-response"
 import { requireApiAccess } from "@/lib/api-guard"
-import { extractTextFromFile, MAX_FILE_SIZE } from "@/lib/file-extract"
+import { extractTextFromFile, MAX_FILE_SIZE, FileTooLargeError, UnsupportedFileError } from "@/lib/file-extract"
 import { buildResumeWriteData, dbResumeToParsed } from "@/lib/resume-mapper"
 import type { ParsedResume } from "@/types"
 
@@ -117,9 +117,15 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ resume, resumeId })
   } catch (error: any) {
+    if (error instanceof FileTooLargeError) {
+      return apiError(error.message, "FILE_TOO_LARGE", 413)
+    }
+    if (error instanceof UnsupportedFileError) {
+      return apiError(error.message, "UNSUPPORTED_FILE", 415)
+    }
     console.error("Resume parse error:", error)
     return apiError(
-      error.message || "简历解析失败，请检查文件格式",
+      "简历解析失败，请检查文件格式",
       "PARSE_ERROR",
       500
     )
@@ -184,6 +190,6 @@ export async function PUT(req: Request) {
     return NextResponse.json({ id: resultId, message: "简历已保存" })
   } catch (error: any) {
     console.error("Resume put error:", error)
-    return apiError(error.message || "保存简历失败", "PUT_ERROR", 500)
+    return apiError("保存简历失败", "PUT_ERROR", 500)
   }
 }

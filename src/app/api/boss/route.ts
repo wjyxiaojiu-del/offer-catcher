@@ -105,7 +105,7 @@ export async function POST(req: Request) {
     }
   } catch (error: any) {
     console.error("Boss API error:", error)
-    return NextResponse.json({ error: error.message || "操作失败" }, { status: 500 })
+    return NextResponse.json({ error: "操作失败" }, { status: 500 })
   }
 }
 

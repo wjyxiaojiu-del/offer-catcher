@@ -86,7 +86,7 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("Agent match error:", error)
     return NextResponse.json(
-      { error: error.message || "匹配失败", thinking: ["执行过程中发生错误"] },
+      { error: "匹配失败", thinking: ["执行过程中发生错误"] },
       { status: 500 }
     )
   }

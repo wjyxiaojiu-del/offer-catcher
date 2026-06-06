@@ -64,7 +64,7 @@ export async function POST(req: Request) {
   } catch (error: any) {
     console.error("Save job error:", error)
     return NextResponse.json(
-      { error: error.message || "保存岗位失败" },
+      { error: "保存岗位失败" },
       { status: 500 }
     )
   }
