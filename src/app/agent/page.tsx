@@ -1,156 +1,36 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback, type ReactNode } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { Bot, Target, PenLine, Paperclip } from "lucide-react"
 import { useToast } from "@/components/ui/toast"
-import type { MatchResult } from "@/types"
-import type { Task } from "@/lib/agent/types"
+import { renderMarkdown } from "@/lib/markdown"
+import { scoreColor } from "@/lib/ui-utils"
+import { useChatSessions, type ChatMessage } from "@/hooks/useChatSessions"
+import { useAgentStream } from "@/hooks/useAgentStream"
 
-// ============ Types ============
-
-interface ChatMessage {
-  id: string
-  role: "user" | "agent"
-  content: string
-  thinking?: string[]
-  tasks?: Task[]
-  matches?: any[]
-  timestamp: number
-}
-
-interface Session {
-  id: string
-  title: string
-  messages: ChatMessage[]
-  updatedAt: number
-}
-
-// ============ Markdown Renderer ============
-
-function renderMarkdown(text: string): JSX.Element {
-  const lines = text.split("\n")
-  const elements: JSX.Element[] = []
-  let listItems: string[] = []
-  let key = 0
-
-  const flushList = () => {
-    if (listItems.length > 0) {
-      elements.push(
-        <ul key={`ul-${key++}`} className="list-disc pl-5 space-y-1 my-2 text-sm">
-          {listItems.map((item, i) => (
-            <li key={i}>{renderInlineMarkdown(item)}</li>
-          ))}
-        </ul>
-      )
-      listItems = []
-    }
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const trimmed = line.trim()
-
-    if (trimmed.startsWith("- ") || trimmed.startsWith("• ") || /^\d+\./.test(trimmed)) {
-      listItems.push(trimmed.replace(/^[-•\d.]+\s*/, ""))
-    } else {
-      flushList()
-      if (trimmed.startsWith("### ")) {
-        elements.push(
-          <h3 key={`h3-${key++}`} className="font-bold text-base mt-3 mb-1">
-            {renderInlineMarkdown(trimmed.slice(4))}
-          </h3>
-        )
-      } else if (trimmed.startsWith("## ")) {
-        elements.push(
-          <h2 key={`h2-${key++}`} className="font-bold text-lg mt-4 mb-1">
-            {renderInlineMarkdown(trimmed.slice(3))}
-          </h2>
-        )
-      } else if (trimmed.startsWith("# ")) {
-        elements.push(
-          <h1 key={`h1-${key++}`} className="font-bold text-xl mt-4 mb-2">
-            {renderInlineMarkdown(trimmed.slice(2))}
-          </h1>
-        )
-      } else if (trimmed === "") {
-        // skip
-      } else {
-        elements.push(
-          <p key={`p-${key++}`} className="my-1.5 leading-relaxed text-sm">
-            {renderInlineMarkdown(line)}
-          </p>
-        )
-      }
-    }
-  }
-  flushList()
-  return <div>{elements}</div>
-}
-
-function renderInlineMarkdown(text: string): ReactNode[] {
-  const nodes: ReactNode[] = []
-  const pattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*)/g
-  let lastIndex = 0
-  let match: RegExpExecArray | null
-  let key = 0
-
-  while ((match = pattern.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index))
-    }
-
-    const token = match[0]
-    if (token.startsWith("`")) {
-      nodes.push(
-        <code key={`code-${key++}`} className="bg-gray-100 px-1 py-0.5 rounded text-xs font-mono">
-          {token.slice(1, -1)}
-        </code>
-      )
-    } else if (token.startsWith("**")) {
-      nodes.push(
-        <strong key={`strong-${key++}`} className="font-semibold text-inherit">
-          {token.slice(2, -2)}
-        </strong>
-      )
-    } else {
-      nodes.push(<em key={`em-${key++}`}>{token.slice(1, -1)}</em>)
-    }
-
-    lastIndex = match.index + token.length
-  }
-
-  if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex))
-  }
-
-  return nodes
-}
+const STORAGE_KEY = "offer-catcher-agent-sessions"
 
 // ============ Components ============
 
-function MatchCard({ result }: { result: MatchResult }) {
+function MatchCardInline({ m, onClick }: { m: any; onClick: () => void }) {
   return (
-    <div className="bg-white border rounded-xl p-4 hover:shadow-md transition-shadow">
-      <div className="flex justify-between items-start mb-2">
+    <div
+      className="bg-white border rounded-xl p-3 hover:shadow-md transition-shadow cursor-pointer"
+      onClick={onClick}
+    >
+      <div className="flex justify-between items-start mb-1.5">
         <div className="flex-1 min-w-0">
-          <h4 className="font-bold text-sm">{result.job.title}</h4>
-          <p className="text-xs text-gray-500 mt-0.5">{result.job.company} · {result.job.location}</p>
+          <h4 className="font-bold text-sm truncate">{m.title}</h4>
+          <p className="text-xs text-gray-500">{m.company} · {m.location}</p>
         </div>
-        <div className={`text-xl font-bold ml-3 ${
-          result.score >= 80 ? "text-green-600" :
-          result.score >= 60 ? "text-blue-600" :
-          result.score >= 40 ? "text-yellow-600" : "text-red-500"
-        }`}>
-          {result.score}%
-        </div>
+        <span className={`text-sm font-bold ml-2 ${scoreColor(m.score)}`}>
+          {m.score}%
+        </span>
       </div>
-      <div className="flex flex-wrap gap-1 mt-2">
-        {result.matchedSkills.slice(0, 5).map((s, i) => (
-          <span key={i} className="px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-[10px]">{s}</span>
-        ))}
-        {result.missingSkills.slice(0, 3).map((s, i) => (
-          <span key={`m-${i}`} className="px-2 py-0.5 bg-red-50 text-red-700 rounded-full text-[10px]">{s}</span>
+      <div className="flex flex-wrap gap-1">
+        {(m.matchedSkills || []).slice(0, 4).map((s: string, j: number) => (
+          <span key={j} className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px]">{s}</span>
         ))}
       </div>
     </div>
@@ -159,260 +39,104 @@ function MatchCard({ result }: { result: MatchResult }) {
 
 // ============ Main Page ============
 
-const STORAGE_KEY = "offer-catcher-agent-sessions"
-const MAX_SESSIONS = 20
-
 export default function AgentPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [currentSessionId, setCurrentSessionId] = useState<string>("")
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const {
+    sessions,
+    currentSessionId,
+    messages,
+    createSession,
+    switchSession,
+    deleteSession,
+    updateCurrentSession,
+    ensureSession,
+  } = useChatSessions({ storageKey: STORAGE_KEY })
+  const { isLoading, sendMessage: streamSend } = useAgentStream()
+
   const [input, setInput] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
 
-  // Load sessions from localStorage
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY)
-      if (raw) {
-        const parsed = JSON.parse(raw) as Session[]
-        setSessions(parsed)
-        if (parsed.length > 0) {
-          setCurrentSessionId(parsed[0].id)
-          setMessages(parsed[0].messages)
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, [])
-
-  // Save sessions
-  useEffect(() => {
-    if (sessions.length > 0) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions))
-    }
-  }, [sessions])
-
-  // Auto scroll
+  // Auto scroll on new messages / loading state changes
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages, isLoading])
 
-  const createSession = useCallback(() => {
-    const newSession: Session = {
-      id: crypto.randomUUID(),
-      title: "新对话",
-      messages: [],
-      updatedAt: Date.now(),
-    }
-    setSessions((prev) => [newSession, ...prev].slice(0, MAX_SESSIONS))
-    setCurrentSessionId(newSession.id)
-    setMessages([])
-    setSidebarOpen(false)
-  }, [])
+  const sendMessage = useCallback(
+    async (text: string, resumeText?: string) => {
+      if (!text.trim() && !resumeText) return
 
-  const switchSession = useCallback((id: string) => {
-    const session = sessions.find((s) => s.id === id)
-    if (session) {
-      setCurrentSessionId(id)
-      setMessages(session.messages)
-      setSidebarOpen(false)
-    }
-  }, [sessions])
+      const sid = ensureSession(text.trim())
 
-  const deleteSession = useCallback((e: React.MouseEvent, id: string) => {
-    e.stopPropagation()
-    setSessions((prev) => {
-      const next = prev.filter((s) => s.id !== id)
-      if (id === currentSessionId) {
-        if (next.length > 0) {
-          setCurrentSessionId(next[0].id)
-          setMessages(next[0].messages)
-        } else {
-          setCurrentSessionId("")
-          setMessages([])
-        }
-      }
-      return next
-    })
-  }, [currentSessionId])
-
-  const updateCurrentSession = useCallback((newMessages: ChatMessage[]) => {
-    setMessages(newMessages)
-    setSessions((prev) => {
-      const idx = prev.findIndex((s) => s.id === currentSessionId)
-      if (idx === -1) return prev
-      const next = [...prev]
-      const title = newMessages.find((m) => m.role === "user")?.content.slice(0, 20) || "新对话"
-      next[idx] = {
-        ...next[idx],
-        messages: newMessages,
-        title: next[idx].title === "新对话" ? title : next[idx].title,
-        updatedAt: Date.now(),
-      }
-      return next
-    })
-  }, [currentSessionId])
-
-  const sendMessage = useCallback(async (text: string, resumeText?: string) => {
-    if (!text.trim() && !resumeText) return
-
-    // Ensure session exists
-    let sid = currentSessionId
-    if (!sid) {
-      const newSession: Session = {
+      const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
-        title: text.trim().slice(0, 20) || "新对话",
-        messages: [],
-        updatedAt: Date.now(),
+        role: "user",
+        content: text.trim() || "已上传简历",
+        timestamp: Date.now(),
       }
-      setSessions((prev) => [newSession, ...prev].slice(0, MAX_SESSIONS))
-      setCurrentSessionId(newSession.id)
-      sid = newSession.id
-    }
+      const newMessages = [...messages, userMsg]
+      updateCurrentSession(newMessages)
+      setInput("")
 
-    const userMsg: ChatMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: text.trim() || "已上传简历",
-      timestamp: Date.now(),
-    }
-
-    const newMessages = [...messages, userMsg]
-    updateCurrentSession(newMessages)
-    setInput("")
-    setIsLoading(true)
-
-    const thinkingSteps: string[] = []
-    let agentContent = ""
-    let agentTasks: Task[] = []
-    let agentMatches: any[] = []
-
-    try {
-      abortRef.current = new AbortController()
-      const res = await fetch("/api/agent/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text.trim() || "你好",
-          sessionId: sid,
-          resumeText,
-        }),
-        signal: abortRef.current.signal,
+      const result = await streamSend({
+        message: text,
+        sessionId: sid,
+        resumeText,
       })
 
-      if (!res.body) throw new Error("无响应体")
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
-
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i]
-          if (line.startsWith("event: ")) {
-            const eventType = line.slice(7)
-            const dataLine = lines[i + 1]
-            if (dataLine?.startsWith("data: ")) {
-              try {
-                const data = JSON.parse(dataLine.slice(6))
-                if (eventType === "thinking") {
-                  thinkingSteps.push(data.text)
-                } else if (eventType === "task") {
-                  const existing = agentTasks.find((t) => t.id === data.taskId)
-                  if (existing) {
-                    existing.status = data.status
-                  } else {
-                    agentTasks.push({
-                      id: data.taskId,
-                      name: data.name || data.taskId,
-                      description: "",
-                      status: data.status,
-                      agent: data.agent,
-                      dependencies: [],
-                    })
-                  }
-                } else if (eventType === "result") {
-                  agentContent = data.content || ""
-                  agentTasks = data.tasks || agentTasks
-                  agentMatches = data.matches
-                } else if (eventType === "error") {
-                  agentContent = `⚠️ ${data.message || "出错了"}`
-                }
-              } catch {
-                // ignore parse errors
-              }
-              i++ // skip data line
-            }
-          }
-        }
-      }
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        agentContent = "⚠️ 连接失败，请检查网络后重试。"
-      }
-    } finally {
-      setIsLoading(false)
       const agentMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: "agent",
-        content: agentContent || "抱歉，没有获取到回复。",
-        thinking: thinkingSteps,
-        tasks: agentTasks,
-        matches: agentMatches,
+        content: result.content || "抱歉，没有获取到回复。",
+        thinking: result.thinking,
+        tasks: result.tasks,
+        matches: result.matches,
         timestamp: Date.now(),
       }
       updateCurrentSession([...newMessages, agentMsg])
-    }
-  }, [messages, currentSessionId, updateCurrentSession])
+    },
+    [messages, ensureSession, updateCurrentSession, streamSend]
+  )
 
-  const handleFileUpload = useCallback(async (file: File) => {
-    const validTypes = [".txt", ".pdf", ".docx", ".doc"]
-    const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase()
-    if (!validTypes.includes(ext)) {
-      toast("请上传 TXT / PDF / DOCX 格式的文件", "error")
-      return
-    }
-
-    let text = ""
-    if (ext === ".txt") {
-      text = await file.text()
-    } else {
-      const formData = new FormData()
-      formData.append("file", file)
-      try {
-        const res = await fetch("/api/resume", { method: "POST", body: formData })
-        const data = await res.json()
-        if (data.resume) {
-          text = data.resume.rawText
-        } else {
-          toast(data.error || "文件解析失败", "error")
-          return
-        }
-      } catch {
-        toast("文件上传失败", "error")
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      const validTypes = [".txt", ".pdf", ".docx", ".doc"]
+      const ext = file.name.substring(file.name.lastIndexOf(".")).toLowerCase()
+      if (!validTypes.includes(ext)) {
+        toast("请上传 TXT / PDF / DOCX 格式的文件", "error")
         return
       }
-    }
 
-    if (text.trim()) {
-      await sendMessage("请帮我解析这份简历", text.trim())
-    }
-  }, [sendMessage, toast])
+      let text = ""
+      if (ext === ".txt") {
+        text = await file.text()
+      } else {
+        const formData = new FormData()
+        formData.append("file", file)
+        try {
+          const res = await fetch("/api/resume", { method: "POST", body: formData })
+          const data = await res.json()
+          if (data.resume) {
+            text = data.resume.rawText
+          } else {
+            toast(data.error || "文件解析失败", "error")
+            return
+          }
+        } catch {
+          toast("文件上传失败", "error")
+          return
+        }
+      }
+
+      if (text.trim()) {
+        await sendMessage("请帮我解析这份简历", text.trim())
+      }
+    },
+    [sendMessage, toast]
+  )
 
   const toggleThinking = (msgId: string) => {
     setExpandedThinking((prev) => ({ ...prev, [msgId]: !prev[msgId] }))
@@ -437,11 +161,15 @@ export default function AgentPage() {
         <div className="p-4 border-b flex items-center justify-between">
           <h2 className="font-bold text-sm text-gray-700">会话历史</h2>
           <button
-            onClick={createSession}
+            onClick={() => {
+              createSession()
+              setSidebarOpen(false)
+            }}
             className="p-1.5 rounded-lg hover:bg-gray-100 text-blue-600 transition-colors"
+            aria-label="新建会话"
             title="新建会话"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           </button>
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -451,7 +179,10 @@ export default function AgentPage() {
           {sessions.map((s) => (
             <div
               key={s.id}
-              onClick={() => switchSession(s.id)}
+              onClick={() => {
+                switchSession(s.id)
+                setSidebarOpen(false)
+              }}
               className={`group flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all text-sm
                 ${s.id === currentSessionId
                   ? "bg-blue-50 border border-blue-200 text-blue-700"
@@ -460,11 +191,15 @@ export default function AgentPage() {
             >
               <span className="truncate flex-1 font-medium">{s.title}</span>
               <button
-                onClick={(e) => deleteSession(e, s.id)}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  deleteSession(s.id)
+                }}
                 className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-50 text-red-500 transition-all"
+                aria-label="删除会话"
                 title="删除"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>
           ))}
@@ -478,8 +213,9 @@ export default function AgentPage() {
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-600"
+            aria-label="打开侧边栏"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
           </button>
           <div className="flex items-center gap-2">
             <Bot className="w-5 h-5 text-gray-700" />
@@ -548,6 +284,7 @@ export default function AgentPage() {
                         className={`transition-transform ${expandedThinking[msg.id] ? "rotate-90" : ""}`}
                         xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24"
                         fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                        aria-hidden="true"
                       >
                         <polyline points="9 18 15 12 9 6" />
                       </svg>
@@ -595,30 +332,11 @@ export default function AgentPage() {
                     <p className="text-xs font-semibold text-gray-500">匹配结果</p>
                     <div className="grid sm:grid-cols-2 gap-2">
                       {msg.matches.slice(0, 4).map((m: any, i: number) => (
-                        <div
+                        <MatchCardInline
                           key={i}
-                          className="bg-white border rounded-xl p-3 hover:shadow-md transition-shadow cursor-pointer"
+                          m={m}
                           onClick={() => router.push(`/match?jobId=${m.jobId}`)}
-                        >
-                          <div className="flex justify-between items-start mb-1.5">
-                            <div className="flex-1 min-w-0">
-                              <h4 className="font-bold text-sm truncate">{m.title}</h4>
-                              <p className="text-xs text-gray-500">{m.company} · {m.location}</p>
-                            </div>
-                            <span className={`text-sm font-bold ml-2 ${
-                              m.score >= 80 ? "text-green-600" :
-                              m.score >= 60 ? "text-blue-600" :
-                              m.score >= 40 ? "text-yellow-600" : "text-red-500"
-                            }`}>
-                              {m.score}%
-                            </span>
-                          </div>
-                          <div className="flex flex-wrap gap-1">
-                            {(m.matchedSkills || []).slice(0, 4).map((s: string, j: number) => (
-                              <span key={j} className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-[10px]">{s}</span>
-                            ))}
-                          </div>
-                        </div>
+                        />
                       ))}
                     </div>
                   </div>
@@ -697,7 +415,7 @@ export default function AgentPage() {
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault()
-                  sendMessage(input)
+                  if (!isLoading) sendMessage(input)
                 }
               }}
               placeholder="输入消息，或上传简历开始..."
@@ -710,7 +428,7 @@ export default function AgentPage() {
               disabled={isLoading || !input.trim()}
               className="px-4 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl text-sm font-medium hover:shadow-lg transition-all disabled:opacity-50 disabled:hover:shadow-none active:scale-95 flex items-center gap-1"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
               <span className="hidden sm:inline">发送</span>
             </button>
           </div>
