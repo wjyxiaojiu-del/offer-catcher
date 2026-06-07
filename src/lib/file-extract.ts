@@ -21,13 +21,32 @@ export class UnsupportedFileError extends Error {
   }
 }
 
-async function parsePDF(buffer: Buffer): Promise<string> {
-  const { extractText } = await import("unpdf")
-  const uint8 = new Uint8Array(buffer)
-  const { text } = await extractText(uint8)
-  const joined = Array.isArray(text) ? text.join("\n") : text
-  if (joined && joined.trim().length > 5) return joined
-  throw new Error("无法从 PDF 中提取文本，建议转为 DOCX/TXT 后上传")
+async function parsePDF(buffer: Buffer, filename = "upload.pdf"): Promise<string> {
+  // Step 1: Try unpdf (fast, text-based PDFs)
+  try {
+    const { extractText } = await import("unpdf")
+    const uint8 = new Uint8Array(buffer)
+    const { text } = await extractText(uint8)
+    const joined = Array.isArray(text) ? text.join("\n") : text
+    if (joined && joined.trim().length > 5) return joined
+  } catch {
+    // unpdf failed — likely scanned/image PDF
+  }
+
+  // Step 2: MinerU OCR fallback (scanned/image PDFs)
+  try {
+    const { mineruExtractText, isMineruAvailable } = await import("./ocr")
+    if (isMineruAvailable()) {
+      const arrayBuffer = new ArrayBuffer(buffer.byteLength)
+      new Uint8Array(arrayBuffer).set(new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength))
+      const text = await mineruExtractText(arrayBuffer, filename)
+      if (text && text.trim().length > 0) return text
+    }
+  } catch (ocrErr: any) {
+    console.warn("MinerU OCR fallback failed:", ocrErr.message)
+  }
+
+  throw new Error("无法从 PDF 中提取文本，建议转为 DOCX/TXT 后上传。如果是扫描件，请配置 MinerU OCR 服务。")
 }
 
 async function parseDOCX(buffer: Buffer): Promise<string> {
@@ -59,7 +78,7 @@ export async function extractTextFromFile(file: File): Promise<string> {
   const fileName = file.name.toLowerCase()
 
   if (fileName.endsWith(".pdf")) {
-    return parsePDF(buffer)
+    return parsePDF(buffer, file.name)
   }
   if (fileName.endsWith(".docx")) {
     return parseDOCX(buffer)
