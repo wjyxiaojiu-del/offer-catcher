@@ -208,6 +208,27 @@ export function extractEducation(text: string): Education[] {
   return educations
 }
 
+/** Known foreign company names for experience extraction */
+const FOREIGN_COMPANIES = [
+  "Google", "Apple", "Microsoft", "Amazon", "Meta", "Netflix", "Uber", "Airbnb",
+  "ByteDance", "Tencent", "Alibaba", "Huawei", "Xiaomi", "Baidu", "JD", "Meituan",
+  "Twitter", "LinkedIn", "Salesforce", "Oracle", "SAP", "IBM", "Intel", "Nvidia",
+  "Adobe", "VMware", "ServiceNow", "Snowflake", "Databricks", "Stripe", "Shopify",
+  "Spotify", "Tesla", "SpaceX", "Samsung", "Sony", "Toyota", "McKinsey", "BCG",
+  "Bain", "Goldman Sachs", "Morgan Stanley", "JPMorgan", "Deloitte", "PwC", "EY", "KPMG",
+]
+
+/** Detect if a line contains a foreign company name */
+function isForeignCompanyLine(line: string): boolean {
+  // Check against known company names
+  for (const name of FOREIGN_COMPANIES) {
+    if (line.includes(name)) return true
+  }
+  // Check for English company suffixes: "X Inc", "X Corp", "X Ltd", "X LLC", "X Co."
+  if (/[A-Z][a-zA-Z]+\s+(?:Inc|Corp|Ltd|LLC|Co\.|Group|Technologies|Labs|Solutions|Systems)\b/.test(line)) return true
+  return false
+}
+
 export function extractExperience(text: string): Experience[] {
   if (!text || text.trim().length < 5) return []
   const experiences: Experience[] = []
@@ -251,14 +272,27 @@ export function extractExperience(text: string): Experience[] {
       // Remove date portion for cleaner company/title extraction
       const cleanLine = line.replace(/\d{4}[.\-年]\d{1,2}[月]?\s*[-–至到]\s*(?:\d{4}[.\-年]?\d{1,2}[月]?|至今|present|now)/gi, "").trim()
 
-      // Company detection: has company keywords
-      // Company + title detection
+      // Company detection: Chinese company keywords OR foreign company names
       if (!company && /公司|科技|网络|信息|集团|银行|证券|保险|传媒|教育|医疗|医药|生物/i.test(cleanLine)) {
         const companyMatch = cleanLine.match(/^(.+?(?:公司|科技|网络|信息|集团|银行|证券|保险|传媒|教育|医疗|医药|生物))\s+/)
         if (companyMatch) {
           company = companyMatch[1].trim()
           const rest = cleanLine.replace(companyMatch[1], "").trim()
           if (rest && !title) title = rest
+        } else {
+          company = cleanLine
+        }
+        continue
+      }
+
+      // Foreign company detection
+      if (!company && isForeignCompanyLine(cleanLine)) {
+        // Extract company name: take the part before any title-like keywords
+        const titlePattern = /(?:工程师|开发|设计|经理|运营|实习|助理|专员|主管|总监|研究员|分析师|架构师|Engineer|Developer|Manager|Intern|Analyst)/
+        const titleIdx = cleanLine.search(titlePattern)
+        if (titleIdx > 0) {
+          company = cleanLine.slice(0, titleIdx).trim().replace(/[,|·\-]\s*$/, "")
+          title = cleanLine.slice(titleIdx).trim()
         } else {
           company = cleanLine
         }

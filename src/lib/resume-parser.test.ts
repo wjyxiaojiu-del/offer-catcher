@@ -154,6 +154,20 @@ describe("extractExperience", () => {
     const exp = extractExperience("没有工作经历的文字")
     expect(Array.isArray(exp)).toBe(true)
   })
+
+  it("extracts foreign company name (Google)", () => {
+    const text = "工作经历\nGoogle 软件工程师 2020.06-2023.12\n负责搜索算法开发"
+    const exp = extractExperience(text)
+    expect(exp.length).toBeGreaterThanOrEqual(1)
+    expect(exp.some(e => e.company.includes("Google"))).toBe(true)
+  })
+
+  it("extracts foreign company with suffix (Microsoft Corp)", () => {
+    const text = "工作经历\nMicrosoft Corp 前端工程师 2019.01-2022.06\n负责 Azure 门户开发"
+    const exp = extractExperience(text)
+    expect(exp.length).toBeGreaterThanOrEqual(1)
+    expect(exp.some(e => e.company.includes("Microsoft"))).toBe(true)
+  })
 })
 
 // ============================================================
