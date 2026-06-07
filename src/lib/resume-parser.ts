@@ -1,29 +1,53 @@
 import type { ParsedResume, Education, Experience, Project } from "@/types"
 
-// Skill dictionary for extraction
+// Skill dictionary for extraction (200+ terms)
 const SKILL_DICT = [
-  // Programming
+  // Programming Languages
   "JavaScript", "TypeScript", "Python", "Java", "Go", "Rust", "C", "C++", "C#", "PHP", "Ruby", "Swift", "Kotlin",
+  "Scala", "R", "MATLAB", "Perl", "Lua", "Haskell", "Erlang", "Elixir", "Clojure", "Groovy", "Dart", "Objective-C",
   // Frontend
   "React", "Vue", "Angular", "Next.js", "Nuxt", "Svelte", "HTML", "CSS", "Sass", "Tailwind", "Webpack", "Vite",
+  "Solid.js", "Astro", "Remix", "Gatsby", "jQuery", "Bootstrap", "Ant Design", "Element UI", "Material UI",
+  "Storybook", "pnpm", "npm", "Yarn", "Babel", "ESLint", "Prettier", "PostCSS",
   // Backend
-  "Node.js", "Express", "Django", "Flask", "Spring", "FastAPI", "Gin", "Koa",
-  // Data
+  "Node.js", "Express", "Django", "Flask", "Spring", "FastAPI", "Gin", "Koa", "NestJS", "Hapi",
+  "Laravel", "Symfony", "Rails", "Phoenix", "Echo", "Fiber", "Actix", "Axum", "gRPC",
+  // Database
   "SQL", "MySQL", "PostgreSQL", "MongoDB", "Redis", "Elasticsearch", "Kafka", "RabbitMQ",
+  "ClickHouse", "TiDB", "CockroachDB", "DynamoDB", "Cassandra", "Neo4j", "SQLite", "MariaDB",
+  "Oracle", "SQL Server", "InfluxDB", "TimescaleDB", "Memcached", "Consul", "Etcd",
   // AI/ML
   "PyTorch", "TensorFlow", "NLP", "大模型", "Transformer", "机器学习", "深度学习", "计算机视觉", "LLM",
-  // DevOps
+  "LangChain", "LlamaIndex", "vLLM", "Ollama", "Hugging Face", "Stable Diffusion", "Midjourney", "ComfyUI",
+  "BERT", "GPT", "ChatGPT", "RAG", "Fine-tuning", "LoRA", "RLHF", "Agent", "Prompt Engineering",
+  "scikit-learn", "Pandas", "NumPy", "Matplotlib", "Seaborn", "Jupyter", "MLflow", "Weights & Biases",
+  // DevOps & Cloud
   "Docker", "Kubernetes", "AWS", "Linux", "Git", "Jenkins", "CI/CD", "Terraform", "Shell",
-  // Tools
+  "Helm", "Istio", "ArgoCD", "Grafana", "Loki", "Prometheus", "Ansible", "Puppet", "Nginx", "Apache",
+  "Azure", "GCP", "阿里云", "腾讯云", "S3", "EC2", "Lambda", "CloudFormation", "Vagrant",
+  // Tools & Design
   "Figma", "Sketch", "Photoshop", "Axure", "Tableau", "SPSS", "Excel", "PPT",
-  // Domain
+  "Adobe XD", "Illustrator", "InDesign", "墨刀", "ProcessOn", "Visio", "Notion", "Jira", "Confluence",
+  // Data Analysis & BI
+  "Power BI", "Superset", "Metabase", "dbt", "Airflow", "Spark", "Flink", "Hadoop", "Hive", "Presto",
+  "数据仓库", "ETL", "数据治理", "数据建模", "数据可视化",
+  // Domain & Soft Skills
   "数据分析", "需求分析", "产品设计", "用户研究", "活动策划", "内容运营", "用户运营",
-  // Agriculture
-  "农业", "园艺", "育种", "田间试验", "论文写作",
-  // Embedded
-  "嵌入式", "RTOS", "ARM", "CUDA", "OpenCV",
+  "项目管理", "敏捷开发", "Scrum", "Kanban", "OKR", "KPI",
+  // Agriculture & Biology
+  "农业", "园艺", "育种", "田间试验", "论文写作", "生物信息学", "基因组学", "R语言",
+  // Embedded & Hardware
+  "嵌入式", "RTOS", "ARM", "CUDA", "OpenCV", "FPGA", "STM32", "Arduino", "树莓派",
+  // Mobile
+  "Flutter", "React Native", "uni-app", "小程序", "iOS", "Android", "SwiftUI", "Jetpack Compose",
   // Testing
-  "Selenium", "自动化测试", "性能测试"
+  "Selenium", "自动化测试", "性能测试", "Jest", "Vitest", "Cypress", "Playwright", "Appium",
+  "单元测试", "集成测试", "压力测试", "安全测试",
+  // Security
+  "网络安全", "渗透测试", "加密", "OAuth", "JWT", "SSO", "RBAC",
+  // Chinese Tech Terms
+  "微服务", "容器化", "持续集成", "持续部署", "大前端", "全栈", "中间件", "消息队列",
+  "分布式", "高并发", "高可用", "负载均衡", "服务治理", "灰度发布", "蓝绿部署", "A/B测试",
 ]
 
 export function parseResume(text: string): ParsedResume {
