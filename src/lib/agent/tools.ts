@@ -5,10 +5,12 @@
 import type { Tool, AgentContext } from "./types"
 import { parseResume } from "@/lib/resume-parser"
 import { matchResumeToJobs, generateOptimizationReport } from "@/lib/matcher"
-import { aiAnalyzeMatch } from "@/lib/ai"
+import { aiAnalyzeMatch, callLLM } from "@/lib/ai"
 import { withTimeout } from "@/lib/utils"
 import { jobs } from "@/data/jobs"
 import { saveSessionMemory, getSessionMemory, saveUserPreference, getUserPreference } from "./memory"
+import { detectInterviewType, buildInterviewPrompt, buildFollowUpPrompt, buildInterviewSummary } from "./interview"
+import { buildCareerPrompt, buildGapAnalysisPrompt, buildRoadmapPrompt } from "./career"
 
 export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
   return {
@@ -223,9 +225,10 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
       description: "提供职业建议、简历优化、面试准备",
       parameters: {
         type: { type: "string", description: "建议类型: optimize | interview | career", required: true },
-        jobId: { type: "string", description: "岗位ID（优化场景）", required: false },
+        jobId: { type: "string", description: "岗位ID（优化/面试场景）", required: false },
+        answer: { type: "string", description: "候选人的面试回答（面试追问场景）", required: false },
       },
-      execute: async ({ type, jobId }) => {
+      execute: async ({ type, jobId, answer }) => {
         if (type === "optimize") {
           if (!ctx.resume) throw new Error("请先解析简历")
           const matchTask = ctx.tasks.find(t => t.id === "match")
@@ -237,6 +240,78 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
           if (!job) throw new Error(`未找到岗位: ${targetJobId}`)
           return generateOptimizationReport(ctx.resume, job)
         }
+
+        if (type === "interview") {
+          if (!ctx.resume) throw new Error("请先解析简历")
+          const targetJobId = jobId as string
+          const job = targetJobId ? jobs.find(j => j.id === targetJobId) : undefined
+          const interviewType = job ? detectInterviewType(job) : "mixed"
+
+          // Check if there's existing interview history in memory
+          const history = (ctx.memory.shortTerm.interviewHistory as any[]) || []
+
+          if (answer && history.length > 0) {
+            // Follow-up: candidate answered, generate next question
+            history.push({ role: "candidate", content: String(answer) })
+            const { systemPrompt, userPrompt } = buildFollowUpPrompt(history, interviewType)
+            const nextQuestion = await withTimeout(
+              callLLM(systemPrompt, userPrompt),
+              8000,
+              "感谢你的回答。请继续。",
+              { silent: true }
+            )
+            history.push({ role: "interviewer", content: nextQuestion })
+            ctx.memory.shortTerm.interviewHistory = history
+            return { type: "interview", question: nextQuestion, questionNumber: history.filter(m => m.role === "interviewer").length }
+          } else {
+            // Start new interview
+            const resumeText = ctx.resume.rawText.slice(0, 3000)
+            const defaultJob = job || { title: "通用岗位", company: "目标公司", description: "", skills: [], experience: "不限" } as any
+            const { systemPrompt, userPrompt } = buildInterviewPrompt(interviewType, defaultJob, resumeText)
+            const firstQuestion = await withTimeout(
+              callLLM(systemPrompt, userPrompt),
+              8000,
+              "请简单介绍一下你自己，以及为什么对这个岗位感兴趣？",
+              { silent: true }
+            )
+            const newHistory = [{ role: "interviewer" as const, content: firstQuestion }]
+            ctx.memory.shortTerm.interviewHistory = newHistory
+            return { type: "interview", question: firstQuestion, questionNumber: 1, interviewType }
+          }
+        }
+
+        if (type === "career") {
+          if (!ctx.resume) throw new Error("请先解析简历")
+          const targetJobId = jobId as string
+          const job = targetJobId ? jobs.find(j => j.id === targetJobId) : undefined
+
+          // Generate career advice
+          const { systemPrompt, userPrompt } = buildCareerPrompt(ctx.resume, job)
+          const advice = await withTimeout(
+            callLLM(systemPrompt, userPrompt),
+            10000,
+            "基于你的简历，建议重点提升核心技能、积累项目经验、关注行业趋势。",
+            { silent: true }
+          )
+
+          // If target job, also do gap analysis
+          let gapAnalysis = null
+          if (job) {
+            const gapPrompt = buildGapAnalysisPrompt(ctx.resume, job)
+            const gapResult = await withTimeout(
+              callLLM(gapPrompt.systemPrompt, gapPrompt.userPrompt),
+              8000,
+              null,
+              { silent: true }
+            )
+            if (gapResult) {
+              try { gapAnalysis = JSON.parse(gapResult) } catch { /* ignore parse errors */ }
+            }
+          }
+
+          return { type: "career", advice, gapAnalysis }
+        }
+
         return { advice: "请告诉我更具体的需求，比如目标岗位或想优化的方向。" }
       },
     },

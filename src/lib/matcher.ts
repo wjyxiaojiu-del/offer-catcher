@@ -408,7 +408,7 @@ export function calculateKeywordMatch(text: string, job: Job): number {
   }
 
   // Extract keywords from description (1x weight)
-  const descStopWords = new Set([...reqStopWords, "工作", "开发", "技术", "项目", "团队", "公司", "产品", "系统", "平台", "业务", "需求", "方案", "流程", "规范", "文档"])
+  const descStopWords = new Set([...Array.from(reqStopWords), "工作", "开发", "技术", "项目", "团队", "公司", "产品", "系统", "平台", "业务", "需求", "方案", "流程", "规范", "文档"])
   const descWords = job.description
     .split(/[，,、\s]+/)
     .map(w => w.toLowerCase().trim())
