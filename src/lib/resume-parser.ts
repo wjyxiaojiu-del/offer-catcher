@@ -42,12 +42,38 @@ export function parseResume(text: string): ParsedResume {
   return { name, email, phone, education, experience, skills, projects, rawText: text }
 }
 
-function extractName(lines: string[]): string {
-  for (const line of lines.slice(0, 5)) {
-    if (/^[一-龥]{2,4}$/.test(line)) return line
-    if (/^[A-Z][a-z]+ [A-Z][a-z]+$/.test(line)) return line
+/** Exported for testing */
+export function extractName(lines: string[]): string {
+  // Title keywords to skip — these are resume headings, not names
+  const titleKeywords = /简历|Resume|CV|curriculum|个人信息|个人简介|求职|应聘|自荐/i
+  // Common resume terms that look like 2-char CJK names but aren't
+  const nonNameCJK = /^(本科|硕士|博士|研究生|学士|专科|大专|高中|电话|邮箱|手机|技能|经验|项目|教育|工作|实习|证书|获奖|荣誉|社团|志愿|评价|总结|简介|介绍|目标|期望|薪资|到岗|城市|地址|籍贯|民族|性别|年龄|生日|政治|面貌)$/i
+
+  for (const line of lines.slice(0, 10)) {
+    // Skip lines that are clearly resume titles
+    if (titleKeywords.test(line)) continue
+
+    // Chinese name: 2-4 CJK characters (possibly with spaces between)
+    if (/^[一-龥]{2,4}$/.test(line) && !nonNameCJK.test(line)) return line
+    if (/^[一-龥]\s+[一-龥]{1,3}$/.test(line)) return line.replace(/\s+/g, "")
+
+    // English name: exactly "First Last" (2 words, each capitalized)
+    if (/^[A-Z][a-z]{1,15}\s+[A-Z][a-z]{1,15}$/.test(line)) return line
+    // First M. Last pattern (middle initial)
+    if (/^[A-Z][a-z]+\s+[A-Z]\.\s+[A-Z][a-z]+$/.test(line)) return line
+    // First-Middle Last or First Last-Surname (hyphenated)
+    if (/^[A-Z][a-z]+-[A-Z][a-z]+\s+[A-Z][a-z]+$/.test(line)) return line
+    if (/^[A-Z][a-z]+\s+[A-Z][a-z]+-[A-Z][a-z]+$/.test(line)) return line
   }
-  return lines[0] || "未知"
+
+  // Fallback: first non-empty, non-title line that looks short enough to be a name
+  for (const line of lines.slice(0, 10)) {
+    if (titleKeywords.test(line)) continue
+    // Prefer lines that look like names: short, no digits, no long words
+    if (line.length >= 2 && line.length <= 8 && !/\d/.test(line)) return line
+  }
+
+  return lines[0]?.trim() || "未知"
 }
 
 function extractEmail(text: string): string {

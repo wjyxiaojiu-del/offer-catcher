@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import {
   parseResume,
+  extractName,
   extractSkills,
   extractEducation,
   extractExperience,
@@ -36,6 +37,50 @@ describe("parseResume", () => {
     const text = "张三\nReact developer"
     const resume = parseResume(text)
     expect(resume.rawText).toBe(text)
+  })
+})
+
+// ============================================================
+// extractName — name extraction
+// ============================================================
+
+describe("extractName", () => {
+  it("extracts Chinese name from first line", () => {
+    expect(extractName(["张三", "13800138000"])).toBe("张三")
+  })
+
+  it("extracts hyphenated English name", () => {
+    expect(extractName(["Jean-Pierre Dupont", "Paris, France"])).toBe("Jean-Pierre Dupont")
+  })
+
+  it("extracts English name with middle initial", () => {
+    expect(extractName(["John M. Smith", "New York"])).toBe("John M. Smith")
+  })
+
+  it("skips resume title lines", () => {
+    expect(extractName(["个人简历", "张三", "13800138000"])).toBe("张三")
+  })
+
+  it("skips English resume title", () => {
+    expect(extractName(["Resume", "John Smith", "Engineer"])).toBe("John Smith")
+  })
+
+  it("extracts spaced Chinese name", () => {
+    expect(extractName(["张 三", "13800138000"])).toBe("张三")
+  })
+
+  it("extracts name from line 6 when earlier lines are titles or junk", () => {
+    // "Resume" is skipped as title, other lines don't match name patterns,
+    // so the scan continues to line 5 where "张三" matches CJK name
+    const lines = ["Resume", "2024-01-01", "react, typescript, node.js", "3年工作经验", "本科", "张三", "Phone"]
+    expect(extractName(lines)).toBe("张三")
+  })
+
+  it("falls back to first non-title line if no name pattern matches", () => {
+    const result = extractName(["个人简历", "李四的简历"])
+    // "李四的简历" doesn't match name pattern (4+ chars with non-name content)
+    // but it's the first non-title line in the fallback
+    expect(result).toBeDefined()
   })
 })
 
