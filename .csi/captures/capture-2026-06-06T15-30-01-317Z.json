@@ -1,0 +1,11 @@
+{
+  "network": [],
+  "console": [
+    {
+      "type": "info",
+      "text": "%cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold",
+      "timestamp": 1780759801316
+    }
+  ],
+  "capturedAt": "2026-06-06T15:30:01.583Z"
+}

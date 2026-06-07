@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-06-06T15:30:01.585Z",
+  "stack": {
+    "framework": "next",
+    "frameworkVersion": "^15.5.18",
+    "hasSupabase": false,
+    "deployTarget": "vercel",
+    "supabaseRef": null
+  },
+  "evidence": {
+    "l1": {
+      "readyUrl": "http://localhost:3000",
+      "errors": [],
+      "warnings": []
+    },
+    "l2": {
+      "networkCount": 0,
+      "consoleCount": 1,
+      "issues": []
+    },
+    "l3": null
+  },
+  "diagnosis": null,
+  "llmPrompt": "## 终端输出（L1）\n就绪 URL: http://localhost:3000\n\n## 浏览器网络请求（L2）\n  （无网络请求）"
+}

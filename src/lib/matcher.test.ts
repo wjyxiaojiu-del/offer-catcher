@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { matchResumeToJobs, generateOptimizationReport } from "./matcher"
+import { matchResumeToJobs, generateOptimizationReport, calculateWeights } from "./matcher"
 import type { ParsedResume, Job } from "@/types"
 
 // ============================================================
@@ -116,6 +116,32 @@ describe("matchResumeToJobs", () => {
     const job = makeJob({ skills: ["React", "Vue", "Angular"] })
     const [r] = matchResumeToJobs(resume, [job])
     expect(r.matchedSkills.length + r.missingSkills.length).toBe(3)
+  })
+
+  // --- Dynamic weight: entry-level detection ---
+
+  it("triggers entry-level weight for '0-2年' experience", () => {
+    const weights = calculateWeights(makeJob({ experience: "0-2年" }))
+    expect(weights.skill).toBe(0.45)
+    expect(weights.exp).toBe(0.10)
+  })
+
+  it("does NOT trigger entry-level weight for '10-15年' experience", () => {
+    // "10-15年" contains "0-" as substring but should NOT be entry-level
+    const weights = calculateWeights(makeJob({ experience: "10-15年" }))
+    expect(weights.skill).toBe(0.40)  // default, NOT 0.45
+    expect(weights.exp).toBe(0.15)    // default, NOT 0.10
+  })
+
+  it("triggers entry-level weight for '0~3年' (tilde separator)", () => {
+    const weights = calculateWeights(makeJob({ experience: "0~3年" }))
+    expect(weights.skill).toBe(0.45)
+    expect(weights.exp).toBe(0.10)
+  })
+
+  it("uses default weights for '3-5年' experience", () => {
+    const weights = calculateWeights(makeJob({ experience: "3-5年" }))
+    expect(weights).toEqual({ skill: 0.40, edu: 0.20, exp: 0.15, kw: 0.25 })
   })
 })
 

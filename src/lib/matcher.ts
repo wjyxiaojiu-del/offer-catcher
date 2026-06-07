@@ -90,6 +90,30 @@ function normalizeSkill(s: string): string {
   return s.toLowerCase().replace(/[.\-_]/g, "").trim()
 }
 
+type Weights = { skill: number; edu: number; exp: number; kw: number }
+
+/**
+ * Calculate dynamic weights based on job type.
+ * Exported for direct testing.
+ */
+export function calculateWeights(job: Pick<Job, "experience" | "tags">): Weights {
+  // Default weights
+  let weights: Weights = { skill: 0.40, edu: 0.20, exp: 0.15, kw: 0.25 }
+
+  // For research/AI jobs, education matters more
+  if (job.tags.some(t => ["AI", "算法", "研究", "NLP", "CV"].includes(t))) {
+    weights = { skill: 0.35, edu: 0.25, exp: 0.15, kw: 0.25 }
+  }
+
+  // For entry-level jobs, skills matter more.
+  // Use regex to match "0-N年" pattern at the start, avoiding false positives like "10-15年".
+  if (/^0[-~]\d/.test(job.experience.trim())) {
+    weights = { skill: 0.45, edu: 0.20, exp: 0.10, kw: 0.25 }
+  }
+
+  return weights
+}
+
 export function matchResumeToJobs(resume: ParsedResume, jobs: Job[]): MatchResult[] {
   return jobs.map(job => {
     const skillResult = calculateSkillMatch(resume.skills, job.skills, resume.rawText)
@@ -97,17 +121,7 @@ export function matchResumeToJobs(resume: ParsedResume, jobs: Job[]): MatchResul
     const experienceMatch = calculateExperienceMatch(resume.experience, job.experience)
     const keywordMatch = calculateKeywordMatch(resume.rawText, job)
 
-    // Dynamic weighting based on job type
-    let weights = { skill: 0.40, edu: 0.20, exp: 0.15, kw: 0.25 }
-
-    // For research/AI jobs, education matters more
-    if (job.tags.some(t => ["AI", "算法", "研究", "NLP", "CV"].includes(t))) {
-      weights = { skill: 0.35, edu: 0.25, exp: 0.15, kw: 0.25 }
-    }
-    // For entry-level jobs, skills matter more
-    if (job.experience.includes("0-")) {
-      weights = { skill: 0.45, edu: 0.20, exp: 0.10, kw: 0.25 }
-    }
+    const weights = calculateWeights(job)
 
     const score = Math.round(
       skillResult.score * weights.skill +
