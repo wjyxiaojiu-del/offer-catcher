@@ -249,4 +249,46 @@ describe("generateOptimizationReport", () => {
     expect(completeness).toBeDefined()
     expect(completeness!.score).toBeLessThan(100)
   })
+
+  it("scores relevant projects higher than irrelevant ones", () => {
+    // Resume with React projects
+    const relevantResume = makeResume({
+      skills: ["React"],
+      projects: [
+        { name: "React Dashboard", description: "Built with React and TypeScript", techStack: ["React", "TypeScript"] },
+      ],
+    })
+    // Resume with unrelated projects
+    const irrelevantResume = makeResume({
+      skills: ["Python"],
+      projects: [
+        { name: "Data Pipeline", description: "ETL pipeline with pandas", techStack: ["Python", "Pandas"] },
+      ],
+    })
+    const job = makeJob({ skills: ["React", "TypeScript"] })
+    const relevantReport = generateOptimizationReport(relevantResume, job)
+    const irrelevantReport = generateOptimizationReport(irrelevantResume, job)
+    const relevantProjectScore = relevantReport.sections.find(s => s.title === "项目经历")!.score
+    const irrelevantProjectScore = irrelevantReport.sections.find(s => s.title === "项目经历")!.score
+    expect(relevantProjectScore).toBeGreaterThan(irrelevantProjectScore)
+  })
+
+  it("rewards quantified project descriptions", () => {
+    const quantifiedResume = makeResume({
+      projects: [
+        { name: "Perf Project", description: "性能提升 50%，日活 10 万用户", techStack: ["React"] },
+      ],
+    })
+    const vagueResume = makeResume({
+      projects: [
+        { name: "Some Project", description: "参与了项目开发", techStack: ["React"] },
+      ],
+    })
+    const job = makeJob({ skills: ["React"] })
+    const quantReport = generateOptimizationReport(quantifiedResume, job)
+    const vagueReport = generateOptimizationReport(vagueResume, job)
+    const quantScore = quantReport.sections.find(s => s.title === "项目经历")!.score
+    const vagueScore = vagueReport.sections.find(s => s.title === "项目经历")!.score
+    expect(quantScore).toBeGreaterThan(vagueScore)
+  })
 })

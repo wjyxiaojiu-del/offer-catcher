@@ -387,7 +387,7 @@ export function calculateKeywordMatch(text: string, job: Job): number {
   //   description: 1x (general context)
   const weightedKeywords: { word: string; weight: number }[] = []
 
-  for (const skill of job.requiredSkills ?? job.skills) {
+  for (const skill of (job.requiredSkills?.length ? job.requiredSkills : job.skills)) {
     weightedKeywords.push({ word: skill.toLowerCase(), weight: 3 })
   }
   for (const skill of job.niceToHaveSkills ?? []) {
@@ -567,6 +567,49 @@ function generateAIAnalysis(
   return parts.join("")
 }
 
+/**
+ * Calculate project relevance score based on tech stack overlap and quantified results.
+ * Single project score = base(20) + relevance(0-50) + quantification(0-30)
+ * Total = min(sum, 100)
+ */
+function calculateProjectScore(
+  projects: { name: string; description: string; techStack: string[] }[],
+  job: Job
+): number {
+  if (projects.length === 0) return 0
+
+  const jobSkills = new Set(
+    [...(job.requiredSkills?.length ? job.requiredSkills : job.skills), ...(job.niceToHaveSkills ?? [])]
+      .map(s => normalizeSkill(s))
+  )
+
+  let totalScore = 0
+  for (const project of projects) {
+    // Base score for having a project
+    let projectScore = 20
+
+    // Relevance: tech stack overlap with job skills (0-50)
+    if (project.techStack.length > 0 && jobSkills.size > 0) {
+      const overlap = project.techStack.filter(tech => jobSkills.has(normalizeSkill(tech)))
+      const relevanceRatio = overlap.length / Math.max(jobSkills.size, 1)
+      projectScore += Math.round(relevanceRatio * 50)
+    }
+
+    // Quantification: detect numeric indicators in description (0-30)
+    const quantPatterns = /\d+%|\d+万|\d+个|\d+次|\d+人|\d+倍|提升\d|增长\d|优化\d|减少\d|节省\d|服务\d+|[一二三四五六七八九十]+倍/
+    if (quantPatterns.test(project.description)) {
+      projectScore += 30
+    } else if (/\d+/.test(project.description)) {
+      // Has numbers but not clear quantification
+      projectScore += 10
+    }
+
+    totalScore += Math.min(projectScore, 100)
+  }
+
+  return Math.min(totalScore, 100)
+}
+
 // Generate resume optimization report
 export function generateOptimizationReport(resume: ParsedResume, job: Job): {
   overall: string
@@ -611,7 +654,7 @@ export function generateOptimizationReport(resume: ParsedResume, job: Job): {
     },
     {
       title: "项目经历",
-      score: Math.min(resume.projects.length * 30, 100),
+      score: calculateProjectScore(resume.projects, job),
       feedback: resume.projects.length >= 3 ? "项目经历充实" :
                 resume.projects.length >= 2 ? "项目经历基本够用" : "项目经历偏少",
       improvements: resume.projects.length < 2
