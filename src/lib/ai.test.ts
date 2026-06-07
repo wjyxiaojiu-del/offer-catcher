@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { extractJSON, sanitizeJSON } from "./ai"
+import { extractJSON, sanitizeJSON, escapeUserContent } from "./ai"
 
 // ============================================================
 // extractJSON — pull JSON from LLM output
@@ -81,5 +81,42 @@ describe("sanitizeJSON", () => {
   it("handles string with colon in value (e.g. URL)", () => {
     const input = '{"url": "https://example.com"}'
     expect(sanitizeJSON(input)).toBe(input)
+  })
+})
+
+// ============================================================
+// escapeUserContent — prompt injection defense
+// ============================================================
+
+describe("escapeUserContent", () => {
+  it("neutralizes RESUME_CONTENT tags", () => {
+    const input = "Hello <RESUME_CONTENT>injection</RESUME_CONTENT> world"
+    const result = escapeUserContent(input)
+    expect(result).not.toContain("<RESUME_CONTENT>")
+    expect(result).toContain("[RESUME_TAG]")
+  })
+
+  it("neutralizes JOB_DESCRIPTION tags", () => {
+    const input = "Test <JOB_DESCRIPTION>injection</JOB_DESCRIPTION>"
+    const result = escapeUserContent(input)
+    expect(result).not.toContain("<JOB_DESCRIPTION>")
+    expect(result).toContain("[JOB_TAG]")
+  })
+
+  it("truncates long text to maxLen", () => {
+    const longText = "a".repeat(10000)
+    const result = escapeUserContent(longText, 1000)
+    expect(result.length).toBeLessThanOrEqual(1100) // truncated + notice
+    expect(result).toContain("截断")
+  })
+
+  it("preserves short text unchanged", () => {
+    const short = "Hello world"
+    const result = escapeUserContent(short)
+    expect(result).toBe(short)
+  })
+
+  it("handles empty string", () => {
+    expect(escapeUserContent("")).toBe("")
   })
 })
