@@ -39,7 +39,7 @@ function recognizeIntentByRules(userInput: string, ctx: AgentContext): ParsedInt
     return { intent: "apply_jobs", params: { query: userInput }, confidence: 0.85 }
   }
 
-  if (/面试|准备|题库|面经|会问什么/.test(lower)) {
+  if (/面试|准备|题库|面经|会问什么|结束面试/.test(lower)) {
     return { intent: "mock_interview", params: { query: userInput }, confidence: 0.8 }
   }
 
@@ -370,11 +370,35 @@ function generateResponseByRules(
       return "请上传简历或粘贴简历文本，我帮你解析。"
     }
 
-    case "mock_interview":
-      return "🎯 面试准备功能开发中... 你可以先告诉我目标岗位，我帮你分析面试重点。"
+    case "mock_interview": {
+      const interviewTask = completed.find(t => t.id === "prep")
+      const interviewResult = interviewTask?.result as any
+      if (interviewResult?.question) {
+        const typeLabel = interviewResult.interviewType === "technical" ? "技术面试" : interviewResult.interviewType === "behavioral" ? "行为面试" : "综合面试"
+        let text = `🎯 **${typeLabel}** — 第 ${interviewResult.questionNumber} 题\n\n`
+        text += `> ${interviewResult.question}\n\n`
+        text += `请回答这个问题，我会根据你的回答追问或提出下一题。\n`
+        text += `💡 说"结束面试"可以随时停止并获得总结。`
+        return text
+      }
+      return "🎯 面试准备中... 请先上传简历或告诉我目标岗位。"
+    }
 
-    case "career_advice":
-      return "💼 职业建议：基于你的简历，我建议...\n\n（具体建议需要更多上下文，你可以告诉我感兴趣的方向）"
+    case "career_advice": {
+      const careerTask = completed.find(t => t.id === "advise")
+      const careerResult = careerTask?.result as any
+      if (careerResult?.advice) {
+        let text = `💼 **职业规划建议**\n\n${careerResult.advice}\n`
+        if (careerResult.gapAnalysis) {
+          text += `\n📊 **技能差距分析**\n`
+          if (careerResult.gapAnalysis.matched?.length) text += `✅ 已掌握: ${careerResult.gapAnalysis.matched.join(", ")}\n`
+          if (careerResult.gapAnalysis.missing?.length) text += `❌ 待学习: ${careerResult.gapAnalysis.missing.join(", ")}\n`
+          if (careerResult.gapAnalysis.priority?.length) text += `🔥 优先级: ${careerResult.gapAnalysis.priority.join(" > ")}\n`
+        }
+        return text
+      }
+      return "💼 职业建议生成中... 请先上传简历。"
+    }
 
     default:
       return `我是Offer捕手求职Agent 🤖\n\n我可以帮你：\n1. 📄 解析简历并提取关键信息\n2. 🎯 智能匹配适合的岗位\n3. ✍️ 针对特定JD优化简历\n4. 🚀 一键模拟投递\n5. 💬 职业规划和面试建议\n\n请先上传简历或告诉我你的需求！`
