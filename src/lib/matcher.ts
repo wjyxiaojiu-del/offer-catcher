@@ -374,32 +374,47 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
-function calculateKeywordMatch(text: string, job: Job): number {
+export function calculateKeywordMatch(text: string, job: Job): number {
   const lowerText = text.toLowerCase()
 
-  // Tokenize text into words for word-boundary matching
-  const words = new Set(lowerText.split(/[\s,，、.。;；:：!！?？()（）\[\]{}]+/).filter(w => w.length > 1))
+  // Tokenize text into words for word-boundary matching (min length 3 to reduce noise)
+  const words = new Set(lowerText.split(/[\s,，、.。;；:：!！?？()（）\[\]{}]+/).filter(w => w.length > 2))
 
-  // Collect keywords from job: required skills (2x weight), nice-to-have (1x),
-  // requirements keywords, and description keywords
+  // Collect keywords from job with tiered weights:
+  //   skills/requiredSkills: 3x (core competencies)
+  //   requirements: 2x (explicit requirements)
+  //   niceToHaveSkills: 1.5x
+  //   description: 1x (general context)
   const weightedKeywords: { word: string; weight: number }[] = []
 
   for (const skill of job.requiredSkills ?? job.skills) {
-    weightedKeywords.push({ word: skill.toLowerCase(), weight: 2 })
+    weightedKeywords.push({ word: skill.toLowerCase(), weight: 3 })
   }
   for (const skill of job.niceToHaveSkills ?? []) {
-    weightedKeywords.push({ word: skill.toLowerCase(), weight: 1 })
+    weightedKeywords.push({ word: skill.toLowerCase(), weight: 1.5 })
   }
 
-  // Extract additional keywords from requirements and description
-  const descWords = [
-    ...job.requirements.flatMap(r => r.split(/[，,、\s]+/).filter(w => w.length > 1)),
-    ...job.description.split(/[，,、\s]+/).filter(w => w.length > 1)
-  ].map(w => w.toLowerCase())
-    .filter(w => w.length > 2 && !["优先", "熟悉", "了解", "负责", "具有", "具备", "以上", "经验", "能力"].includes(w))
+  // Extract keywords from requirements (2x weight)
+  const reqStopWords = new Set(["优先", "熟悉", "了解", "负责", "具有", "具备", "以上", "经验", "能力", "相关", "良好", "较强", "丰富", "优秀", "熟练", "掌握", "参与", "能够", "优先考虑", "优先", "学历", "本科", "硕士", "博士"])
+  const reqWords = job.requirements
+    .flatMap(r => r.split(/[，,、\s]+/))
+    .map(w => w.toLowerCase().trim())
+    .filter(w => w.length > 2 && !reqStopWords.has(w))
+
+  for (const w of reqWords) {
+    if (!weightedKeywords.some(k => k.word === w)) {
+      weightedKeywords.push({ word: w, weight: 2 })
+    }
+  }
+
+  // Extract keywords from description (1x weight)
+  const descStopWords = new Set([...reqStopWords, "工作", "开发", "技术", "项目", "团队", "公司", "产品", "系统", "平台", "业务", "需求", "方案", "流程", "规范", "文档"])
+  const descWords = job.description
+    .split(/[，,、\s]+/)
+    .map(w => w.toLowerCase().trim())
+    .filter(w => w.length > 2 && !descStopWords.has(w))
 
   for (const w of descWords) {
-    // Don't double-count words already in skills
     if (!weightedKeywords.some(k => k.word === w)) {
       weightedKeywords.push({ word: w, weight: 1 })
     }

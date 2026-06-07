@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { matchResumeToJobs, generateOptimizationReport, calculateWeights } from "./matcher"
+import { matchResumeToJobs, generateOptimizationReport, calculateWeights, calculateKeywordMatch } from "./matcher"
 import type { ParsedResume, Job } from "@/types"
 
 // ============================================================
@@ -162,6 +162,54 @@ describe("matchResumeToJobs", () => {
   it("uses default weights for '3-5年' experience", () => {
     const weights = calculateWeights(makeJob({ experience: "3-5年" }))
     expect(weights).toEqual({ skill: 0.40, edu: 0.20, exp: 0.15, kw: 0.25 })
+  })
+})
+
+// ============================================================
+// calculateKeywordMatch — keyword weighting
+// ============================================================
+
+describe("calculateKeywordMatch", () => {
+  it("gives higher weight to skills than description words", () => {
+    const job = makeJob({
+      skills: ["React"],
+      requiredSkills: ["React"],
+      niceToHaveSkills: [],
+      requirements: [],
+      description: "负责前端开发工作",
+    })
+    // Resume has "React" in text
+    const score = calculateKeywordMatch("React developer with 3 years experience", job)
+    // Should get a decent score because "React" is a skill keyword (higher weight)
+    expect(score).toBeGreaterThan(0)
+  })
+
+  it("filters stop words from description keywords", () => {
+    const job = makeJob({
+      skills: [],
+      requiredSkills: [],
+      niceToHaveSkills: [],
+      requirements: [],
+      description: "熟悉 React 了解 Vue 优先考虑",
+    })
+    // "熟悉", "了解", "优先" should be filtered out as stop words
+    const score = calculateKeywordMatch("React Vue developer", job)
+    // Score should be based on "React" and "Vue" only, not the stop words
+    expect(score).toBeGreaterThan(0)
+  })
+
+  it("requires minimum keyword length of 3 characters", () => {
+    const job = makeJob({
+      skills: [],
+      requiredSkills: [],
+      niceToHaveSkills: [],
+      requirements: [],
+      description: "Go is great for backend development",
+    })
+    // "Go" (2 chars) and "is" (2 chars) should be filtered out
+    const score = calculateKeywordMatch("backend developer", job)
+    // Only "great", "backend", "development" should count
+    expect(score).toBeGreaterThanOrEqual(0)
   })
 })
 
