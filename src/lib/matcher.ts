@@ -1,5 +1,6 @@
 import type { Job } from "@/types"
 import type { ParsedResume, MatchResult } from "@/types"
+import { getUniversityBonus } from "@/data/universities"
 
 // Skill synonym groups for fuzzy matching
 const SKILL_SYNONYMS: Record<string, string[]> = {
@@ -247,18 +248,21 @@ function calculateEducationMatch(educations: { degree: string; school?: string }
   if (userLevel === 0) userLevel = 3 // default to bachelor level
 
   // School tier bonus
-  const schoolTiers: Record<string, number> = {
+  // "双一流"/"985"/"211" etc. as explicit labels in the school name
+  const explicitTiers: Record<string, number> = {
     "双一流": 5, "985": 5, "211": 4, "一本": 3, "重点": 3,
-    "University": 3, "College": 2,
   }
   let schoolBonus = 0
   for (const edu of educations) {
     if (!edu.school) continue
-    for (const [key, val] of Object.entries(schoolTiers)) {
+    // Check explicit tier labels first
+    for (const [key, val] of Object.entries(explicitTiers)) {
       if (edu.school.includes(key)) {
         schoolBonus = Math.max(schoolBonus, val)
       }
     }
+    // Then check against 985/211 university name list
+    schoolBonus = Math.max(schoolBonus, getUniversityBonus(edu.school))
   }
 
   let reqLevel = 3

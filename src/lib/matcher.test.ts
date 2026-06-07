@@ -111,6 +111,26 @@ describe("matchResumeToJobs", () => {
     expect(tier.educationMatch).toBeGreaterThanOrEqual(base.educationMatch)
   })
 
+  it("does NOT give school bonus for non-prestigious 'University' substring", () => {
+    // "野鸡大学 University" should NOT get the school tier bonus
+    const fakeResume = makeResume({ education: [{ school: "野鸡大学 University", major: "CS", degree: "本科", year: "2024" }] })
+    const normalResume = makeResume({ education: [{ school: "普通学院", major: "CS", degree: "本科", year: "2024" }] })
+    const job = makeJob({ education: "本科及以上" })
+    const [fake] = matchResumeToJobs(fakeResume, [job])
+    const [normal] = matchResumeToJobs(normalResume, [job])
+    // Both should have the same education score — "University" substring should not add bonus
+    expect(fake.educationMatch).toBe(normal.educationMatch)
+  })
+
+  it("still rewards 985 schools like 清华大学", () => {
+    const tsinghua = makeResume({ education: [{ school: "清华大学", major: "CS", degree: "本科", year: "2024" }] })
+    const normal = makeResume({ education: [{ school: "普通学院", major: "CS", degree: "本科", year: "2024" }] })
+    const job = makeJob({ education: "本科及以上" })
+    const [t] = matchResumeToJobs(tsinghua, [job])
+    const [n] = matchResumeToJobs(normal, [job])
+    expect(t.educationMatch).toBeGreaterThan(n.educationMatch)
+  })
+
   it("returns matched + missing that together cover all required skills", () => {
     const resume = makeResume({ skills: ["React"], rawText: "React" })
     const job = makeJob({ skills: ["React", "Vue", "Angular"] })
