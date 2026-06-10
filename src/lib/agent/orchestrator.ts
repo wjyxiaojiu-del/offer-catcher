@@ -317,6 +317,7 @@ async function executeReActAction(
     const result = await tool.execute(action.params)
     return { result, durationMs: Date.now() - start }
   } catch (err: any) {
+    console.error(`[ReAct] Tool ${action.tool} failed:`, err)
     return { result: null, error: err.message || String(err), durationMs: Date.now() - start }
   }
 }
@@ -405,6 +406,8 @@ async function runReActLoop(
     } else {
       completed.push(task)
     }
+    // 填充 ctx.tasks 以便后续工具（如 advisor）可以引用 ReAct 的执行结果
+    ctx.tasks.push(task)
   }
 
   return { steps, completed, failed }
@@ -554,13 +557,25 @@ function generateResponseByRules(
     }
 
     case "optimize_resume": {
-      const optTask = completed.find(t => t.id === "optimize")
+      // 兼容固定 DAG (id === "optimize") 和 ReAct (agent === "advisor" 且包含优化结果)
+      const optTask = completed.find(t =>
+        t.id === "optimize" ||
+        (t.agent === "advisor" &&
+         t.result &&
+         typeof (t.result as any).overallScore === "number")
+      )
       const report = optTask?.result as any
-      if (report) {
+      if (report && typeof report.overallScore === "number") {
         return `📊 简历优化报告（${report.overallScore}分）\n\n${report.overall}\n\n`
           + report.sections.map((s: any) => `**${s.icon} ${s.title}** (${s.score}分): ${s.feedback}\n建议: ${s.improvements.join("; ")}`).join("\n\n")
       }
-      return "已收到优化请求。请先上传简历，或告诉我目标岗位的JD。"
+      // 简历已解析但优化失败/无结果：给出建设性引导，不要回退到"请上传简历"
+      if (ctx.resume) {
+        return `✅ 已加载简历：**${ctx.resume.name}**\n\n` +
+          `⚡ 技能：${ctx.resume.skills.slice(0, 10).join("、")}${ctx.resume.skills.length > 10 ? "..." : ""}（共 ${ctx.resume.skills.length} 项）\n\n` +
+          `要优化简历，请告诉我目标岗位名称或粘贴 JD，我帮你针对性优化。`
+      }
+      return "📄 **请先上传简历**\n\n我需要先了解你的技能和经历，才能为你优化简历。\n\n你可以直接粘贴简历文本，或上传 PDF/DOCX 文件。"
     }
 
     case "apply_jobs": {

@@ -62,9 +62,11 @@ export async function POST(req: Request) {
 
     try {
       const { aiAnalyzeMatch } = await import("@/lib/ai")
-      const topN = 3
+      const topN = 1
 
-      // Parallel AI enrichment for speed (~6s vs ~15s sequential)
+      // Parallel AI enrichment for speed (~3s vs ~15s sequential)
+      // Only enrich the top-1 match to keep response fast; users can still
+      // see rule-based scores for all other jobs.
       const aiPromises = results.slice(0, topN).map((result) =>
         withTimeout(
           aiAnalyzeMatch(resolvedResume, {

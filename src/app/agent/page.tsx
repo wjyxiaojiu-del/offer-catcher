@@ -74,6 +74,7 @@ export default function AgentPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const latestResumeRef = useRef<{ id: string; name: string; rawText: string } | null>(null)
+  const [resumeReady, setResumeReady] = useState(false)
 
   // Load latest resume on mount
   useEffect(() => {
@@ -94,6 +95,9 @@ export default function AgentPage() {
       .catch(() => {
         // ignore
       })
+      .finally(() => {
+        setResumeReady(true)
+      })
   }, [])
 
   // Auto scroll on new messages / loading state changes
@@ -109,7 +113,32 @@ export default function AgentPage() {
 
       // Auto-inject latest resume if user asks for match/optimize without providing one
       const needsResume = /匹配|优化|分析|投递|面试|岗位|推荐/i.test(text)
-      const effectiveResumeText = resumeText || (needsResume ? latestResumeRef.current?.rawText : undefined)
+      let effectiveResumeText = resumeText
+
+      // If no resume provided but message needs one, try to fetch latest inline
+      if (!effectiveResumeText && needsResume && !latestResumeRef.current) {
+        try {
+          const res = await fetch("/api/resumes")
+          if (res.ok) {
+            const data = await res.json()
+            const resumes = Array.isArray(data.resumes) ? data.resumes : []
+            if (resumes.length > 0) {
+              const latest = resumes[0]
+              latestResumeRef.current = {
+                id: latest.id,
+                name: latest.name || "未命名简历",
+                rawText: latest.rawText || "",
+              }
+            }
+          }
+        } catch {
+          // ignore inline fetch failure
+        }
+      }
+
+      if (!effectiveResumeText && needsResume) {
+        effectiveResumeText = latestResumeRef.current?.rawText
+      }
 
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),

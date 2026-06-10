@@ -236,12 +236,39 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
         answer: { type: "string", description: "候选人的面试回答（面试追问场景）", required: false },
       },
       execute: async ({ type, jobId, answer }) => {
+        try {
         if (type === "optimize") {
           if (!ctx.resume) throw new Error("请先解析简历")
-          const matchTask = ctx.tasks.find(t => t.id === "match")
-          const results = matchTask?.result as any[] | undefined
+
+          // 1. 先从当前 tasks 中找匹配结果（固定 DAG 或 ReAct 都会填充）
+          const matchTask = ctx.tasks.find(t => t.id === "match" || t.name === "matchJobs" || t.agent === "matchJobs")
+          let results = matchTask?.result as any[] | undefined
+
+          // 2. Fallback: 从 session memory 找上次匹配结果
+          if (!results) {
+            results = ctx.memory.shortTerm.lastMatches as any[] | undefined
+          }
+
           const topMatch = results?.[0]
-          const targetJobId = (jobId as string) || topMatch?.jobId
+          let targetJobId = (jobId as string) || topMatch?.jobId
+
+          // 3. 如果还没有目标岗位，从岗位库中找一个技能最匹配的
+          if (!targetJobId) {
+            const allJobs = await getAllJobs()
+            if (allJobs.length > 0) {
+              // 优先找技能匹配的岗位
+              const skillMatch = allJobs.find(j =>
+                j.skills.some(s =>
+                  ctx.resume!.skills.some(rs =>
+                    rs.toLowerCase().includes(s.toLowerCase()) ||
+                    s.toLowerCase().includes(rs.toLowerCase())
+                  )
+                )
+              )
+              targetJobId = skillMatch?.id || allJobs[0].id
+            }
+          }
+
           if (!targetJobId) throw new Error("未找到目标岗位")
           const job = await findJobById(targetJobId)
           if (!job) throw new Error(`未找到岗位: ${targetJobId}`)
@@ -320,6 +347,10 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
         }
 
         return { advice: "请告诉我更具体的需求，比如目标岗位或想优化的方向。" }
+        } catch (err: any) {
+          console.error("[advisor tool error]", err)
+          throw err
+        }
       },
     },
 
