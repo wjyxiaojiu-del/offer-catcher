@@ -14,6 +14,7 @@ interface SendOptions {
   message: string
   sessionId: string
   resumeText?: string
+  resumeId?: string
 }
 
 /**
@@ -35,7 +36,7 @@ export function useAgentStream() {
     }
   }, [])
 
-  const sendMessage = useCallback(async ({ message, sessionId, resumeText }: SendOptions): Promise<StreamResult> => {
+  const sendMessage = useCallback(async ({ message, sessionId, resumeText, resumeId }: SendOptions): Promise<StreamResult> => {
     // Cancel any prior in-flight request — rapid retries shouldn't race.
     abortRef.current?.abort()
     const controller = new AbortController()
@@ -52,7 +53,7 @@ export function useAgentStream() {
       const res = await fetch("/api/agent/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: message.trim() || "你好", sessionId, resumeText }),
+        body: JSON.stringify({ message: message.trim() || "你好", sessionId, resumeText, resumeId }),
         signal: controller.signal,
       })
 

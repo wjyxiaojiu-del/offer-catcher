@@ -54,7 +54,25 @@ export function UploadSection() {
 
     if (ext === ".txt") {
       const reader = new FileReader()
-      reader.onload = (e) => { setResumeText(e.target?.result as string); setIsProcessing(false) }
+      reader.onload = async (e) => {
+        const text = e.target?.result as string
+        setResumeText(text)
+        // Save TXT content to API so we get a resumeId
+        try {
+          const res = await fetch("/api/resume", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+          })
+          const data = await res.json()
+          if (data.resumeId) {
+            setResumeId(data.resumeId)
+          }
+        } catch {
+          // ignore
+        }
+        setIsProcessing(false)
+      }
       reader.readAsText(file)
     } else {
       const formData = new FormData()

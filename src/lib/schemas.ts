@@ -55,6 +55,7 @@ export const AgentChatBodySchema = z.object({
   message: z.string().trim().min(1, "消息不能为空").max(8000, "消息过长"),
   sessionId: z.string().optional(),
   resumeText: z.string().max(50000).optional(),
+  resumeId: z.string().optional(),
   userId: z.string().optional(),
 })
 

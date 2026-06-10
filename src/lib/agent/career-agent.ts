@@ -137,6 +137,10 @@ export class CareerAgent {
     }
   }
 
+  setResume(resume: ParsedResume): void {
+    this.ctx.resume = resume
+  }
+
   getResume(): ParsedResume | undefined {
     return this.ctx.resume
   }

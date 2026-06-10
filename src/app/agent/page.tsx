@@ -87,6 +87,7 @@ function AgentPageInner() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const latestResumeRef = useRef<{ id: string; name: string; rawText: string } | null>(null)
+  const [loadedResume, setLoadedResume] = useState<{ id: string; name: string } | null>(null)
   const [resumeReady, setResumeReady] = useState(false)
 
   // Load resume on mount: prefer URL resumeId, fallback to latest
@@ -105,6 +106,7 @@ function AgentPageInner() {
                 name: data.resume.name || "未命名简历",
                 rawText: data.resume.rawText || "",
               }
+              setLoadedResume({ id: data.resume.id, name: data.resume.name || "未命名简历" })
               setResumeReady(true)
               return
             }
@@ -167,6 +169,7 @@ function AgentPageInner() {
                 name: latest.name || "未命名简历",
                 rawText: latest.rawText || "",
               }
+              setLoadedResume({ id: latest.id, name: latest.name || "未命名简历" })
             }
           }
         } catch {
@@ -192,6 +195,7 @@ function AgentPageInner() {
         message: text,
         sessionId: sid,
         resumeText: effectiveResumeText,
+        resumeId: latestResumeRef.current?.id,
       })
 
       const agentMsg: ChatMessage = {
@@ -243,13 +247,14 @@ function AgentPageInner() {
       }
 
       if (text.trim()) {
-        await sendMessage("请帮我解析这份简历", text.trim())
-        // Update in-memory resume so subsequent messages can use it
+        // Update in-memory resume BEFORE sending so streamSend gets the resumeId
         latestResumeRef.current = {
           id: resumeId,
           name: resumeName,
           rawText: text.trim(),
         }
+        setLoadedResume({ id: resumeId || "local", name: resumeName })
+        await sendMessage("请帮我解析这份简历", text.trim())
       }
     },
     [sendMessage, toast]
@@ -352,10 +357,10 @@ function AgentPageInner() {
               Offer捕手求职Agent
             </h1>
           </div>
-          {latestResumeRef.current && (
+          {loadedResume && (
             <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
               <FileText className="w-3 h-3" />
-              <span className="truncate max-w-[120px]">{latestResumeRef.current.name}</span>
+              <span className="truncate max-w-[120px]">{loadedResume.name}</span>
             </div>
           )}
           <div className="ml-auto flex items-center gap-2">

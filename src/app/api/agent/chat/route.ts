@@ -3,6 +3,8 @@ import { withTimeout } from "@/lib/utils"
 import { requireApiAccess } from "@/lib/api-guard"
 import { AgentChatBodySchema } from "@/lib/schemas"
 import { getDeviceIdFromRequest } from "@/lib/api-device"
+import { prisma } from "@/lib/db"
+import { dbResumeToParsed } from "@/lib/resume-mapper"
 
 export const runtime = "nodejs"
 
@@ -50,11 +52,30 @@ export async function POST(req: Request) {
         const agent = new CareerAgent({ sessionId, userId: effectiveUserId })
         await agent.init()
 
-        // Parse resume if provided
-        if (resumeText && resumeText.trim().length > 0) {
+        // 1. Load resume by ID (fastest — already parsed in DB)
+        const resumeId = parsed.data.resumeId
+        if (resumeId) {
+          try {
+            const dbResume = await prisma.resume.findFirst({
+              where: { id: resumeId, deviceId: deviceId || undefined },
+              include: { educations: true, experiences: true, projects: true, skills: true },
+            })
+            if (dbResume) {
+              const parsedResume = dbResumeToParsed(dbResume)
+              agent.setResume(parsedResume)
+              send("thinking", { step: 1, text: `📄 已加载简历：${parsedResume.name}` })
+              send("task", { taskId: "parse", status: "completed", agent: "parseResumeText" })
+            }
+          } catch (err) {
+            console.warn("Load resume by ID failed:", err)
+          }
+        }
+
+        // 2. Fallback: parse raw text if no DB resume
+        if (!agent.getResume() && resumeText && resumeText.trim().length > 0) {
           send("thinking", { step: 1, text: "📄 正在解析简历..." })
-          await withTimeout(agent.parseResume(resumeText), 15000, null)
-          send("task", { taskId: "parse", status: "completed", agent: "resumeParser" })
+          await withTimeout(agent.parseResume(resumeText), 30000, null)
+          send("task", { taskId: "parse", status: "completed", agent: "parseResumeText" })
         }
 
         send("thinking", { step: 2, text: "🧠 正在理解您的意图..." })
