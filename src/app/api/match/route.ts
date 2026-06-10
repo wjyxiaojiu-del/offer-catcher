@@ -64,9 +64,9 @@ export async function POST(req: Request) {
       const { aiAnalyzeMatch } = await import("@/lib/ai")
       const topN = 3
 
-      for (let i = 0; i < Math.min(topN, results.length); i++) {
-        const result = results[i]
-        const aiResult = await withTimeout(
+      // Parallel AI enrichment for speed (~6s vs ~15s sequential)
+      const aiPromises = results.slice(0, topN).map((result) =>
+        withTimeout(
           aiAnalyzeMatch(resolvedResume, {
             title: result.job.title,
             company: result.job.company,
@@ -76,23 +76,29 @@ export async function POST(req: Request) {
             education: result.job.education,
             experience: result.job.experience,
           }),
-          5000,
+          8000,
           null
         )
+      )
 
-        if (aiResult) {
-          result.aiAnalysis = typeof aiResult.analysis === "string" ? aiResult.analysis : String(aiResult.analysis ?? "")
-          result.score = Math.round((result.score + (typeof aiResult.score === "number" ? aiResult.score : 50)) / 2)
-          const matched = Array.isArray(aiResult.skillMatch?.matched) ? aiResult.skillMatch.matched : []
-          const missing = Array.isArray(aiResult.skillMatch?.missing) ? aiResult.skillMatch.missing : []
-          result.matchedSkills = matched.length > 0 ? matched : result.matchedSkills
-          result.missingSkills = missing.length > 0 ? missing : result.missingSkills
-          result.suggestions = Array.isArray(aiResult.suggestions) && aiResult.suggestions.length > 0
-            ? aiResult.suggestions
-            : result.suggestions
-          result.aiPowered = true
-        }
-      }
+      const aiResults = await Promise.allSettled(aiPromises)
+
+      aiResults.forEach((outcome, i) => {
+        if (outcome.status !== "fulfilled" || !outcome.value) return
+        const aiResult = outcome.value
+        const result = results[i]
+
+        result.aiAnalysis = typeof aiResult.analysis === "string" ? aiResult.analysis : String(aiResult.analysis ?? "")
+        result.score = Math.round((result.score + (typeof aiResult.score === "number" ? aiResult.score : 50)) / 2)
+        const matched = Array.isArray(aiResult.skillMatch?.matched) ? aiResult.skillMatch.matched : []
+        const missing = Array.isArray(aiResult.skillMatch?.missing) ? aiResult.skillMatch.missing : []
+        result.matchedSkills = matched.length > 0 ? matched : result.matchedSkills
+        result.missingSkills = missing.length > 0 ? missing : result.missingSkills
+        result.suggestions = Array.isArray(aiResult.suggestions) && aiResult.suggestions.length > 0
+          ? aiResult.suggestions
+          : result.suggestions
+        result.aiPowered = true
+      })
     } catch (err) {
       console.warn("AI enrichment failed, using rule-based results:", err)
     }

@@ -73,6 +73,28 @@ export default function AgentPage() {
   const [expandedThinking, setExpandedThinking] = useState<Record<string, boolean>>({})
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const latestResumeRef = useRef<{ id: string; name: string; rawText: string } | null>(null)
+
+  // Load latest resume on mount
+  useEffect(() => {
+    fetch("/api/resumes")
+      .then(async (res) => {
+        if (!res.ok) return
+        const data = await res.json()
+        const resumes = Array.isArray(data.resumes) ? data.resumes : []
+        if (resumes.length > 0) {
+          const latest = resumes[0]
+          latestResumeRef.current = {
+            id: latest.id,
+            name: latest.name || "未命名简历",
+            rawText: latest.rawText || "",
+          }
+        }
+      })
+      .catch(() => {
+        // ignore
+      })
+  }, [])
 
   // Auto scroll on new messages / loading state changes
   useEffect(() => {
@@ -84,6 +106,10 @@ export default function AgentPage() {
       if (!text.trim() && !resumeText) return
 
       const sid = ensureSession(text.trim())
+
+      // Auto-inject latest resume if user asks for match/optimize without providing one
+      const needsResume = /匹配|优化|分析|投递|面试|岗位|推荐/i.test(text)
+      const effectiveResumeText = resumeText || (needsResume ? latestResumeRef.current?.rawText : undefined)
 
       const userMsg: ChatMessage = {
         id: crypto.randomUUID(),
@@ -98,7 +124,7 @@ export default function AgentPage() {
       const result = await streamSend({
         message: text,
         sessionId: sid,
-        resumeText,
+        resumeText: effectiveResumeText,
       })
 
       const agentMsg: ChatMessage = {
@@ -125,6 +151,8 @@ export default function AgentPage() {
       }
 
       let text = ""
+      let resumeId = ""
+      let resumeName = "未命名简历"
       if (ext === ".txt") {
         text = await file.text()
       } else {
@@ -135,6 +163,8 @@ export default function AgentPage() {
           const data = await res.json()
           if (data.resume) {
             text = data.resume.rawText
+            resumeId = data.resumeId || ""
+            resumeName = data.resume.name || "未命名简历"
           } else {
             toast(getApiErrorMessage(data, "文件解析失败"), "error")
             return
@@ -147,6 +177,12 @@ export default function AgentPage() {
 
       if (text.trim()) {
         await sendMessage("请帮我解析这份简历", text.trim())
+        // Update in-memory resume so subsequent messages can use it
+        latestResumeRef.current = {
+          id: resumeId,
+          name: resumeName,
+          rawText: text.trim(),
+        }
       }
     },
     [sendMessage, toast]

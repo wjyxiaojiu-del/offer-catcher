@@ -2,15 +2,22 @@
 
 import { useState, useEffect } from "react"
 import Link from "next/link"
-import { Target, Bot, BarChart3, Send, MessageSquare, ArrowRight, Sparkles } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Target, Bot, BarChart3, Send, MessageSquare, ArrowRight, Sparkles, FileText, Clock } from "lucide-react"
 import { CountUp } from "@/components/count-up"
 import { UploadSection } from "@/components/home/upload-section"
 import { cn } from "@/lib/utils"
+import type { ParsedResume } from "@/types"
 
 interface SiteStats {
   jobs: number
   questions: number
   applications: number
+}
+
+interface ResumeWithMeta extends ParsedResume {
+  createdAt: string
+  updatedAt: string
 }
 
 const FALLBACK_STATS: SiteStats = {
@@ -37,6 +44,8 @@ const STEPS = [
 
 export default function Home() {
   const [stats, setStats] = useState<SiteStats>(FALLBACK_STATS)
+  const [recentResumes, setRecentResumes] = useState<ResumeWithMeta[]>([])
+  const router = useRouter()
 
   useEffect(() => {
     fetch('/api/stats')
@@ -49,6 +58,18 @@ export default function Home() {
       })
       .catch(() => {
         // 保持 fallback
+      })
+
+    fetch('/api/resumes')
+      .then(async (res) => {
+        if (!res.ok) return
+        const data = await res.json()
+        if (Array.isArray(data.resumes)) {
+          setRecentResumes(data.resumes.slice(0, 3))
+        }
+      })
+      .catch(() => {
+        // ignore
       })
   }, [])
 
@@ -103,6 +124,45 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Recent Resumes */}
+      {recentResumes.length > 0 && (
+        <section className="max-w-3xl mx-auto px-4 -mt-5 relative z-10 mb-4">
+          <div className="bg-white rounded-xl border border-gray-100 p-4 shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-gray-700 flex items-center gap-1.5">
+                <Clock className="w-4 h-4 text-blue-500" />
+                最近上传的简历
+              </h3>
+              <Link href="/resume/edit" className="text-xs text-blue-600 hover:text-blue-800">
+                管理全部
+              </Link>
+            </div>
+            <div className="space-y-2">
+              {recentResumes.map((r) => (
+                <div
+                  key={r.id}
+                  onClick={() => router.push(`/match?resumeId=${r.id}`)}
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors border border-transparent hover:border-gray-100"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <FileText className="w-4 h-4 text-blue-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {r.name || "未命名简历"}
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      {r.education?.[0]?.school || ""} · {r.skills?.length || 0} 项技能
+                    </p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Upload Section */}
       <section className="max-w-3xl mx-auto px-4 -mt-5 relative z-10">
