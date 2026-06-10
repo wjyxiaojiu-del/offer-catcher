@@ -9,6 +9,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireApiAccess } from '@/lib/api-guard'
 import { getDeviceIdFromRequest } from '@/lib/api-device'
 import { getMockInterview, updateMockInterview, deleteMockInterview } from '@/lib/interview/db'
+import { apiError } from '@/lib/api-response'
 
 export async function GET(
   req: NextRequest,
@@ -23,16 +24,13 @@ export async function GET(
     const interview = await getMockInterview(deviceId, id)
 
     if (!interview) {
-      return NextResponse.json({ error: '面试不存在' }, { status: 404 })
+      return apiError('面试不存在', 'NOT_FOUND', 404)
     }
 
     return NextResponse.json(interview)
   } catch (error) {
     console.error('获取面试详情失败:', error)
-    return NextResponse.json(
-      { error: '获取面试详情失败' },
-      { status: 500 }
-    )
+    return apiError('获取面试详情失败', 'GET_ERROR', 500)
   }
 }
 
@@ -51,10 +49,7 @@ export async function PUT(
     return NextResponse.json(interview)
   } catch (error) {
     console.error('更新面试失败:', error)
-    return NextResponse.json(
-      { error: '更新面试失败' },
-      { status: 500 }
-    )
+    return apiError('更新面试失败', 'UPDATE_ERROR', 500)
   }
 }
 
@@ -72,9 +67,6 @@ export async function DELETE(
     return NextResponse.json({ success: true })
   } catch (error) {
     console.error('删除面试失败:', error)
-    return NextResponse.json(
-      { error: '删除面试失败' },
-      { status: 500 }
-    )
+    return apiError('删除面试失败', 'DELETE_ERROR', 500)
   }
 }

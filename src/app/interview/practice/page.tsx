@@ -34,10 +34,16 @@ export default function PracticePage() {
 
   useEffect(() => {
     fetch('/api/interview/questions/modules')
-      .then((res) => res.json())
-      .then((data) => {
-        setModules(data)
-        setSelectedModules(new Set(data.map((m: Module) => m.name)))
+      .then(async (res) => {
+        const data = await res.json()
+        if (!res.ok) {
+          console.error(data.error?.message || data.error || '获取模块失败')
+          setModules([])
+          return
+        }
+        const list = Array.isArray(data) ? data : data.modules || []
+        setModules(list)
+        setSelectedModules(new Set(list.map((m: Module) => m.name)))
       })
       .catch(console.error)
       .finally(() => setLoading(false))

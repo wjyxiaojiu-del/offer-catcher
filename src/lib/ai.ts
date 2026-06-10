@@ -214,7 +214,22 @@ ${escapeUserContent(job.description)}
 
   const result = await chatWithRetry(systemPrompt, userPrompt)
   try {
-    return JSON.parse(sanitizeJSON(extractJSON(result)))
+    const parsed = JSON.parse(sanitizeJSON(extractJSON(result)))
+    // Harden: LLM may return analysis as object instead of string
+    if (typeof parsed.analysis !== "string") {
+      parsed.analysis = typeof parsed.analysis === "object" && parsed.analysis != null
+        ? JSON.stringify(parsed.analysis)
+        : String(parsed.analysis ?? "")
+    }
+    if (!Array.isArray(parsed.strengths)) parsed.strengths = []
+    if (!Array.isArray(parsed.weaknesses)) parsed.weaknesses = []
+    if (!Array.isArray(parsed.suggestions)) parsed.suggestions = []
+    if (!parsed.skillMatch || typeof parsed.skillMatch !== "object") {
+      parsed.skillMatch = { matched: [], missing: job.skills }
+    }
+    if (!Array.isArray(parsed.skillMatch.matched)) parsed.skillMatch.matched = []
+    if (!Array.isArray(parsed.skillMatch.missing)) parsed.skillMatch.missing = job.skills
+    return parsed
   } catch {
     return {
       score: 50,

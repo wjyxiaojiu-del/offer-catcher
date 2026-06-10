@@ -4,6 +4,7 @@ import { aiAnalyzeMatch } from "@/lib/ai"
 import { requireApiAccess } from "@/lib/api-guard"
 import { dbResumeToParsed } from "@/lib/resume-mapper"
 import { getDeviceIdFromRequest } from "@/lib/api-device"
+import { apiError } from "@/lib/api-response"
 
 // POST /api/jobs/match - 岗位匹配检查
 export async function POST(req: Request) {
@@ -14,10 +15,7 @@ export async function POST(req: Request) {
     const { resumeId, jobData } = await req.json()
 
     if (!resumeId || !jobData) {
-      return NextResponse.json(
-        { error: "缺少必要参数" },
-        { status: 400 }
-      )
+      return apiError("缺少必要参数", "MISSING_PARAMS", 400)
     }
 
     // 获取简历信息
@@ -33,7 +31,7 @@ export async function POST(req: Request) {
     })
 
     if (!resume) {
-      return NextResponse.json({ error: "简历不存在" }, { status: 404 })
+      return apiError("简历不存在", "NOT_FOUND", 404)
     }
 
     // aiAnalyzeMatch wants a subset of ParsedResume — derive it from the
@@ -81,9 +79,6 @@ export async function POST(req: Request) {
     })
   } catch (error: any) {
     console.error("Match job error:", error)
-    return NextResponse.json(
-      { error: "匹配分析失败" },
-      { status: 500 }
-    )
+    return apiError("匹配分析失败", "MATCH_ERROR", 500)
   }
 }

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireApiAccess } from '@/lib/api-guard'
 import { getDeviceIdFromRequest } from '@/lib/api-device'
 import { getQuestionById } from '@/lib/interview/db'
+import { apiError } from '@/lib/api-response'
 
 export async function GET(
   req: NextRequest,
@@ -21,15 +22,12 @@ export async function GET(
     const question = await getQuestionById(id, deviceId)
 
     if (!question) {
-      return NextResponse.json({ error: '题目不存在' }, { status: 404 })
+      return apiError('题目不存在', 'NOT_FOUND', 404)
     }
 
     return NextResponse.json(question)
   } catch (error) {
     console.error('获取题目详情失败:', error)
-    return NextResponse.json(
-      { error: '获取题目详情失败' },
-      { status: 500 }
-    )
+    return apiError('获取题目详情失败', 'GET_ERROR', 500)
   }
 }

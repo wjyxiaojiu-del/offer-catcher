@@ -40,8 +40,13 @@ export default function Home() {
 
   useEffect(() => {
     fetch('/api/stats')
-      .then((res) => res.json())
-      .then((data: SiteStats) => setStats(data))
+      .then(async (res) => {
+        const data = await res.json()
+        if (!res.ok) return
+        if (data && typeof data.jobs === 'number') {
+          setStats(data)
+        }
+      })
       .catch(() => {
         // 保持 fallback
       })

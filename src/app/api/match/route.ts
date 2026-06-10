@@ -5,6 +5,7 @@ import { requireApiAccess } from "@/lib/api-guard"
 import { dbResumeToParsed } from "@/lib/resume-mapper"
 import { getAllJobs } from "@/lib/job-service"
 import { getDeviceIdFromRequest } from "@/lib/api-device"
+import { apiError } from "@/lib/api-response"
 import type { ParsedResume } from "@/types"
 
 export async function POST(req: Request) {
@@ -27,17 +28,17 @@ export async function POST(req: Request) {
         if (record) {
           resolvedResume = dbResumeToParsed(record)
         } else {
-          if (!resume) return NextResponse.json({ error: "No resume data" }, { status: 400 })
+          if (!resume) return apiError("缺少简历数据", "MISSING_RESUME", 400)
           resolvedResume = resume
         }
       } catch {
-        if (!resume) return NextResponse.json({ error: "No resume data" }, { status: 400 })
+        if (!resume) return apiError("缺少简历数据", "MISSING_RESUME", 400)
         resolvedResume = resume
       }
     } else if (resume) {
       resolvedResume = resume
     } else {
-      return NextResponse.json({ error: "No resume data" }, { status: 400 })
+      return apiError("缺少简历数据", "MISSING_RESUME", 400)
     }
 
     // 从数据库获取岗位
@@ -46,7 +47,7 @@ export async function POST(req: Request) {
     // If jobId is provided, generate optimization report for that specific job
     if (jobId) {
       const job = allJobs.find((j) => j.id === jobId)
-      if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 })
+      if (!job) return apiError("岗位不存在", "JOB_NOT_FOUND", 404)
       const report = generateOptimizationReport(resolvedResume, job)
       return NextResponse.json({ report, job })
     }
@@ -80,15 +81,13 @@ export async function POST(req: Request) {
         )
 
         if (aiResult) {
-          result.aiAnalysis = aiResult.analysis
-          result.score = Math.round((result.score + aiResult.score) / 2)
-          result.matchedSkills = aiResult.skillMatch.matched.length > 0
-            ? aiResult.skillMatch.matched
-            : result.matchedSkills
-          result.missingSkills = aiResult.skillMatch.missing.length > 0
-            ? aiResult.skillMatch.missing
-            : result.missingSkills
-          result.suggestions = aiResult.suggestions.length > 0
+          result.aiAnalysis = typeof aiResult.analysis === "string" ? aiResult.analysis : String(aiResult.analysis ?? "")
+          result.score = Math.round((result.score + (typeof aiResult.score === "number" ? aiResult.score : 50)) / 2)
+          const matched = Array.isArray(aiResult.skillMatch?.matched) ? aiResult.skillMatch.matched : []
+          const missing = Array.isArray(aiResult.skillMatch?.missing) ? aiResult.skillMatch.missing : []
+          result.matchedSkills = matched.length > 0 ? matched : result.matchedSkills
+          result.missingSkills = missing.length > 0 ? missing : result.missingSkills
+          result.suggestions = Array.isArray(aiResult.suggestions) && aiResult.suggestions.length > 0
             ? aiResult.suggestions
             : result.suggestions
           result.aiPowered = true
@@ -101,6 +100,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ results })
   } catch (error: any) {
     console.error("Match error:", error.message, error.stack)
-    return NextResponse.json({ error: "Failed to match", details: error.message }, { status: 500 })
+    return apiError("匹配失败，请稍后重试", "MATCH_ERROR", 500)
   }
 }

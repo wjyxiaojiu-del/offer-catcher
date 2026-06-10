@@ -8,6 +8,9 @@ import { DeviceIdProvider } from '@/components/device-id-provider'
 export const metadata: Metadata = {
   title: 'Offer 捕手 - AI 求职智能匹配',
   description: 'AI 驱动的智能求职匹配系统，帮你找到最合适的岗位',
+  icons: {
+    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">🎯</text></svg>',
+  },
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

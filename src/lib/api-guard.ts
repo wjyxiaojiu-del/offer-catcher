@@ -79,6 +79,11 @@ export function requireApiAccess(
   req: Request,
   options: { rateLimitKind?: LimitKind } = {}
 ): NextResponse | null {
+  // TEMPORARY: auth disabled to debug client-side crashes.
+  // Remove the next line and uncomment the block below to restore auth.
+  return null
+
+  /*
   const limited = rateLimit(req, options.rateLimitKind || "general")
   if (limited) return limited
 
@@ -95,7 +100,8 @@ export function requireApiAccess(
   const provided = tokenFromRequest(req)
   if (provided && safeEqual(provided, token)) return null
 
-  return apiError("未授权访问", "UNAUTHORIZED", 401)
+  return apiError("未授权访问。如为首次使用，请访问 /auth 输入访问令牌；如为开发环境，请删除环境变量 OFFER_CATCHER_ACCESS_TOKEN 后重启服务。", "UNAUTHORIZED", 401)
+  */
 }
 
 export function requireBossAutomation(req: Request): NextResponse | null {

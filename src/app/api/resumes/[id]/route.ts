@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { requireApiAccess } from "@/lib/api-guard"
+import { apiError } from "@/lib/api-response"
 import { dbResumeToParsed } from "@/lib/resume-mapper"
 import { getDeviceIdFromRequest } from "@/lib/api-device"
 
@@ -27,7 +28,7 @@ export async function GET(
     })
 
     if (!resume) {
-      return NextResponse.json({ error: "简历不存在" }, { status: 404 })
+      return apiError("简历不存在", "NOT_FOUND", 404)
     }
 
     const parsed = dbResumeToParsed(resume)
@@ -40,9 +41,6 @@ export async function GET(
     return NextResponse.json({ resume: formattedResume })
   } catch (error: any) {
     console.error("Get resume error:", error)
-    return NextResponse.json(
-      { error: "获取简历详情失败" },
-      { status: 500 }
-    )
+    return apiError("获取简历详情失败", "GET_ERROR", 500)
   }
 }

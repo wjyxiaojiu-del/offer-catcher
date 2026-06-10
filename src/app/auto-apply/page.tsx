@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useToast } from "@/components/ui/toast"
+import { getApiErrorMessage } from "@/lib/api-client"
 import type { ParsedResume, AutoApplyResult } from "@/types"
 
 function AutoApplyPage() {
@@ -31,13 +32,18 @@ function AutoApplyPage() {
     if (!resumeId) { router.push("/"); return }
 
     fetch(`/api/resume?id=${resumeId}`)
-      .then(r => r.json())
-      .then(data => {
+      .then(async r => {
+        const data = await r.json()
+        if (!r.ok) {
+          toast(getApiErrorMessage(data, "获取简历失败"), "error")
+          router.push("/")
+          return
+        }
         if (!data.resume) { router.push("/"); return }
         setResume(data.resume)
       })
       .catch(() => router.push("/"))
-  }, [router, searchParams])
+  }, [router, searchParams, toast])
 
   const toggleItem = (arr: string[], setArr: (v: string[]) => void, item: string) => {
     setArr(arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item])
@@ -57,6 +63,11 @@ function AutoApplyPage() {
         })
       })
       const data = await res.json()
+      if (!res.ok) {
+        toast(getApiErrorMessage(data, "自动投递失败"), "error")
+        setLoading(false)
+        return
+      }
       setResult(data)
       setShowResult(true)
     } catch {

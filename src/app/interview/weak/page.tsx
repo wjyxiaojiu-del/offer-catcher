@@ -29,8 +29,15 @@ export default function WeakPointsPage() {
 
   useEffect(() => {
     fetch('/api/interview/weak-points?limit=30')
-      .then((res) => res.json())
-      .then(setWeakPoints)
+      .then(async (res) => {
+        const data = await res.json()
+        if (!res.ok) {
+          console.error(data.error?.message || data.error || '获取薄弱点失败')
+          setWeakPoints([])
+          return
+        }
+        setWeakPoints(Array.isArray(data) ? data : data.weakPoints || [])
+      })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [])

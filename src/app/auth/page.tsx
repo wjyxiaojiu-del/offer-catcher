@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { Lock } from "lucide-react"
+import { getApiErrorMessage } from "@/lib/api-client"
 
 export default function AuthPage() {
   const router = useRouter()
@@ -23,7 +24,7 @@ export default function AuthPage() {
       })
       const data = await res.json()
       if (!res.ok) {
-        setError(data.error?.message || data.error || "验证失败")
+        setError(getApiErrorMessage(data, "验证失败"))
         return
       }
       router.push("/")

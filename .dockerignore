@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.browser-state
+.csi
+.vercel
+data
+*.db
+*.db-journal
+*.log
+*.tsbuildinfo
+.env.local
+

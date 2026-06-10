@@ -61,6 +61,11 @@ function PracticeSessionContent() {
       params.set('pageSize', '100')
 
       const res = await fetch(`/api/interview/questions?${params}`)
+      if (!res.ok) {
+        console.error(`加载题目失败 (${res.status})`)
+        setQuestions([])
+        return
+      }
       const data = await res.json()
 
       let loadedQuestions = data.questions || []

@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useToast } from "@/components/ui/toast"
+import { getApiErrorMessage } from "@/lib/api-client"
 import type { ParsedResume, Education, Experience, Project } from "@/types"
 
 const emptyEducation = (): Education => ({
@@ -59,6 +60,11 @@ function ResumeEditPage() {
       try {
         const res = await fetch(`/api/resume?id=${id}`)
         const data = await res.json()
+        if (!res.ok) {
+          toast(getApiErrorMessage(data, "获取简历失败"), "error")
+          router.push("/")
+          return
+        }
         if (data?.resume) {
           setResume(data.resume)
         }
@@ -69,7 +75,7 @@ function ResumeEditPage() {
       setLoading(false)
     }
     load()
-  }, [router, searchParams])
+  }, [router, searchParams, toast])
 
   const handleSave = async () => {
     setSaving(true)
@@ -80,10 +86,14 @@ function ResumeEditPage() {
         body: JSON.stringify({ id: resumeId || undefined, resume }),
       })
       const data = await res.json()
-      if (data.id) {
-        setResumeId(data.id)
+      if (!res.ok) {
+        toast(getApiErrorMessage(data, "保存失败"), "error")
+      } else {
+        if (data.id) {
+          setResumeId(data.id)
+        }
+        toast("保存成功", "success")
       }
-      toast("保存成功", "success")
     } catch {
       toast("保存失败，请重试", "error")
     } finally {

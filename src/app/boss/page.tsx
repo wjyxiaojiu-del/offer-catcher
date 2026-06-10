@@ -92,7 +92,11 @@ function BossPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     })
-    return res.json()
+    const data = await res.json()
+    if (!res.ok) {
+      throw new Error(typeof data.error === "string" ? data.error : data.error?.message || `请求失败 (${res.status})`)
+    }
+    return data
   }
 
   const handleLaunch = async () => {
@@ -518,6 +522,7 @@ function BossPage() {
                 <Eye className="w-4 h-4 text-gray-500" />
                 <span className="text-sm font-medium text-gray-700">实时浏览器画面</span>
               </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={screenshot} alt="浏览器截图" className="w-full rounded-lg border" />
             </div>
           )}

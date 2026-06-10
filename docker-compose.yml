@@ -1,4 +1,30 @@
 services:
+  offer-catcher-db-init:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: builder
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: file:/app/data/offer-catcher.db
+    volumes:
+      - ./data:/app/data
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        sed -i 's|http://deb.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g;
+        s|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g'
+        /etc/apt/sources.list.d/debian.sources &&
+        apt-get update &&
+        apt-get install -y --no-install-recommends openssl &&
+        npx prisma db push &&
+        npm run db:seed &&
+        chmod 0777 /app/data &&
+        chmod 0666 /app/data/offer-catcher.db
+    restart: "no"
+
   offer-catcher:
     build:
       context: .
@@ -8,6 +34,26 @@ services:
       - "3000:3000"
     env_file:
       - .env
+    environment:
+      DATABASE_URL: file:/app/data/offer-catcher.db
     volumes:
-      - ./data:/app/prisma
+      - ./data:/app/data
+    depends_on:
+      offer-catcher-db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:3000/api/stats')
+          .then((response) => {
+            if (!response.ok) process.exit(1)
+          })
+          .catch(() => process.exit(1))
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
     restart: unless-stopped

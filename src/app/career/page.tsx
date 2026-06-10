@@ -10,6 +10,7 @@ import {
 } from "lucide-react"
 import { RadarChart } from "@/components/radar-chart"
 import { cn } from "@/lib/utils"
+import { getApiErrorMessage } from "@/lib/api-client"
 import type { ParsedResume } from "@/types"
 
 interface JobDirection {
@@ -54,8 +55,13 @@ function CareerPageContent() {
     }
 
     fetch(`/api/resume?id=${resumeId}`)
-      .then(r => r.json())
-      .then(data => {
+      .then(async r => {
+        const data = await r.json()
+        if (!r.ok) {
+          setError(getApiErrorMessage(data, "加载简历失败"))
+          setLoading(false)
+          return
+        }
         if (!data.resume) {
           setError("简历不存在")
           setLoading(false)

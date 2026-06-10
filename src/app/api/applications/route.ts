@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { requireApiAccess } from "@/lib/api-guard"
 import { getDeviceIdFromRequest } from "@/lib/api-device"
+import { apiError } from "@/lib/api-response"
 
 // GET /api/applications - 获取投递记录
 export async function GET(req: Request) {
@@ -19,10 +20,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ applications })
   } catch (error: any) {
     console.error("Get applications error:", error)
-    return NextResponse.json(
-      { error: "获取投递记录失败" },
-      { status: 500 }
-    )
+    return apiError("获取投递记录失败", "GET_ERROR", 500)
   }
 }
 
@@ -35,10 +33,7 @@ export async function POST(req: Request) {
     const { resumeId, jobData, greeting, matchScore, method } = await req.json()
 
     if (!resumeId || !jobData) {
-      return NextResponse.json(
-        { error: "缺少必要参数" },
-        { status: 400 }
-      )
+      return apiError("缺少必要参数", "MISSING_PARAMS", 400)
     }
 
     // Upsert: find-or-create in one atomic call (avoids race between concurrent requests)
@@ -87,10 +82,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ application })
   } catch (error: any) {
     console.error("Create application error:", error)
-    return NextResponse.json(
-      { error: "记录投递失败" },
-      { status: 500 }
-    )
+    return apiError("记录投递失败", "CREATE_ERROR", 500)
   }
 }
 
@@ -103,18 +95,12 @@ export async function PATCH(req: Request) {
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
     if (!id) {
-      return NextResponse.json(
-        { error: "缺少记录 ID" },
-        { status: 400 }
-      )
+      return apiError("缺少记录 ID", "MISSING_ID", 400)
     }
 
     const { status } = await req.json()
     if (!status) {
-      return NextResponse.json(
-        { error: "缺少状态参数" },
-        { status: 400 }
-      )
+      return apiError("缺少状态参数", "MISSING_STATUS", 400)
     }
 
     const deviceId = getDeviceIdFromRequest(req)
@@ -123,16 +109,13 @@ export async function PATCH(req: Request) {
       data: { status },
     })
     if (application.count === 0) {
-      return NextResponse.json({ error: "记录不存在" }, { status: 404 })
+      return apiError("记录不存在", "NOT_FOUND", 404)
     }
 
     return NextResponse.json({ application })
   } catch (error: any) {
     console.error("Update application error:", error)
-    return NextResponse.json(
-      { error: "更新投递状态失败" },
-      { status: 500 }
-    )
+    return apiError("更新投递状态失败", "UPDATE_ERROR", 500)
   }
 }
 
@@ -145,10 +128,7 @@ export async function DELETE(req: Request) {
     const { searchParams } = new URL(req.url)
     const id = searchParams.get("id")
     if (!id) {
-      return NextResponse.json(
-        { error: "缺少记录 ID" },
-        { status: 400 }
-      )
+      return apiError("缺少记录 ID", "MISSING_ID", 400)
     }
 
     const deviceId = getDeviceIdFromRequest(req)
@@ -156,15 +136,12 @@ export async function DELETE(req: Request) {
       where: { id, deviceId: deviceId || undefined },
     })
     if (deleted.count === 0) {
-      return NextResponse.json({ error: "记录不存在" }, { status: 404 })
+      return apiError("记录不存在", "NOT_FOUND", 404)
     }
 
     return NextResponse.json({ success: true })
   } catch (error: any) {
     console.error("Delete application error:", error)
-    return NextResponse.json(
-      { error: "删除投递记录失败" },
-      { status: 500 }
-    )
+    return apiError("删除投递记录失败", "DELETE_ERROR", 500)
   }
 }

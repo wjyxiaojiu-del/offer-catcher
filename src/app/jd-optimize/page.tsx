@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { CountUp } from "@/components/count-up"
 import { RadarChart } from "@/components/radar-chart"
 import { useToast } from "@/components/ui/toast"
+import { getApiErrorMessage } from "@/lib/api-client"
 import type { ParsedResume, ReportSection } from "@/types"
 
 function JDOptimizePage() {
@@ -48,7 +49,7 @@ function JDOptimizePage() {
         setReport(data.report)
         setParsedJob(data.job)
       } else {
-        toast(data.error || "分析失败", "error")
+        toast(getApiErrorMessage(data, "分析失败"), "error")
       }
     } catch {
       toast("请求失败，请重试", "error")

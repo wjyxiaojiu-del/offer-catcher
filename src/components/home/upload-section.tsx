@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/components/ui/toast"
+import { getApiErrorMessage } from "@/lib/api-client"
 
 const SAMPLE_RESUME = `王小明
 wangxiaoming@email.com | 13800138000
@@ -60,13 +61,16 @@ export function UploadSection() {
       try {
         const res = await fetch("/api/resume", { method: "POST", body: formData })
         const data = await res.json()
-        if (data.resume) {
+        if (!res.ok) {
+          toast(getApiErrorMessage(data, "文件解析失败"), "error")
+        } else if (data.resume) {
           setResumeText(data.resume.rawText)
           if (data.resumeId) {
             setResumeId(data.resumeId)
           }
+        } else {
+          toast(getApiErrorMessage(data, "文件解析失败"), "error")
         }
-        else toast(data.error || "文件解析失败", "error")
       } catch { toast("文件上传失败，请重试", "error") }
       setIsProcessing(false)
     }
@@ -90,6 +94,11 @@ export function UploadSection() {
           body: JSON.stringify({ text: resumeText }),
         })
         const data = await res.json()
+        if (!res.ok) {
+          toast(getApiErrorMessage(data, "简历解析失败"), "error")
+          setIsProcessing(false)
+          return
+        }
         id = data.resumeId ?? null
       } catch {
         toast("简历解析失败，请重试", "error")

@@ -10,9 +10,19 @@ import {
 import { CountUp } from "@/components/count-up"
 import { MatchCardSkeleton, StatsSkeleton, ResumeSkeleton } from "@/components/skeleton"
 import { useToast } from "@/components/ui/toast"
+import { getApiErrorMessage } from "@/lib/api-client"
 import { cn } from "@/lib/utils"
 import { scoreColor, barColor } from "@/lib/ui-utils"
 import type { ParsedResume, MatchResult } from "@/types"
+
+function safeStr(v: unknown): string {
+  if (typeof v === "string") return v
+  if (v == null) return ""
+  try { return JSON.stringify(v) } catch { return String(v) }
+}
+function safeArr<T = any>(v: unknown): T[] {
+  return Array.isArray(v) ? (v as T[]) : []
+}
 
 const RadarChart = dynamic(
   () => import("@/components/radar-chart").then(m => ({ default: m.RadarChart })),
@@ -55,16 +65,30 @@ function MatchPage() {
     setResumeId(id)
 
     fetch(`/api/resume?id=${id}`)
-      .then(r => r.json())
-      .then(data => {
-        if (!data?.resume) { router.push("/"); setLoading(false); return }
+      .then(async r => {
+        const data = await r.json()
+        if (!r.ok) {
+          toast(getApiErrorMessage(data, "获取简历失败"), "error")
+          router.push("/")
+          setLoading(false)
+          return null
+        }
+        if (!data?.resume) { router.push("/"); setLoading(false); return null }
         setResume(data.resume)
         return fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resume: data.resume, resumeId: id }) })
       })
-      .then(r => r?.json())
-      .then(data => { if (data) { setResults(data.results); setLoading(false) } })
+      .then(async r => {
+        if (!r) return
+        const data = await r.json()
+        if (!r.ok) {
+          toast(getApiErrorMessage(data, "匹配失败"), "error")
+        } else {
+          setResults(data.results)
+        }
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
-  }, [router, searchParams])
+  }, [router, searchParams, toast])
 
   const handleApply = async (jobId: string, jobTitle: string, company: string) => {
     setApplyingId(jobId)
@@ -74,7 +98,9 @@ function MatchPage() {
       if (resumeId) body.resumeId = resumeId
       const res = await fetch("/api/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       const data = await res.json()
-      if (data.success) {
+      if (!res.ok) {
+        toast(getApiErrorMessage(data, "投递失败"), "error")
+      } else if (data.success) {
         toast(`已投递「${jobTitle}」@${company}`, "success")
       }
     } catch { toast("投递失败，请重试", "error") }
@@ -141,9 +167,9 @@ function MatchPage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
             {[
               { label: "姓名", value: resume.name || "未识别", icon: User },
-              { label: "学历", value: `${resume.education[0]?.degree || "未填写"} · ${resume.education[0]?.school || ""}`, icon: GraduationCap },
-              { label: "技能", value: `${resume.skills.length} 项`, icon: Zap },
-              { label: "经历", value: `${resume.experience.length} 段`, icon: Briefcase },
+              { label: "学历", value: `${safeArr(resume.education)[0]?.degree || "未填写"} · ${safeArr(resume.education)[0]?.school || ""}`, icon: GraduationCap },
+              { label: "技能", value: `${safeArr(resume.skills).length} 项`, icon: Zap },
+              { label: "经历", value: `${safeArr(resume.experience).length} 段`, icon: Briefcase },
             ].map((item) => {
               const Icon = item.icon
               return (
@@ -154,9 +180,9 @@ function MatchPage() {
               )
             })}
           </div>
-          {resume.skills.length > 0 && (
+          {safeArr<string>(resume.skills).length > 0 && (
             <div className="mt-3 flex flex-wrap gap-1.5">
-              {resume.skills.map((s, i) => (
+              {safeArr<string>(resume.skills).map((s, i) => (
                 <span key={i} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded-full text-xs font-medium">{s}</span>
               ))}
             </div>
@@ -251,7 +277,7 @@ function MatchPage() {
                 {/* AI Analysis Preview */}
                 <p className="text-xs text-gray-500 leading-relaxed line-clamp-2 mb-3 flex items-start gap-1">
                   <Bot className="w-3.5 h-3.5 mt-0.5 flex-shrink-0 text-gray-400" />
-                  {result.aiAnalysis}
+                  {safeStr(result.aiAnalysis)}
                 </p>
 
                 <div className="flex items-center justify-between">
@@ -286,25 +312,25 @@ function MatchPage() {
                           AI 分析报告
                           {result.aiPowered && <span className="ml-1 px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium">真实 AI</span>}
                         </p>
-                        <p className="text-xs text-gray-600 leading-relaxed">{result.aiAnalysis}</p>
+                        <p className="text-xs text-gray-600 leading-relaxed">{safeStr(result.aiAnalysis)}</p>
                       </div>
-                      {result.matchedSkills.length > 0 && (
+                      {safeArr<string>(result.matchedSkills).length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-green-700 mb-1 flex items-center gap-1">
-                            <CheckCircle2 className="w-3.5 h-3.5" /> 已匹配 ({result.matchedSkills.length})
+                            <CheckCircle2 className="w-3.5 h-3.5" /> 已匹配 ({safeArr<string>(result.matchedSkills).length})
                           </p>
                           <div className="flex flex-wrap gap-1">
-                            {result.matchedSkills.map((s, j) => <span key={j} className="px-2 py-0.5 bg-green-50 text-green-700 rounded text-xs">{s}</span>)}
+                            {safeArr<string>(result.matchedSkills).map((s, j) => <span key={j} className="px-2 py-0.5 bg-green-50 text-green-700 rounded text-xs">{s}</span>)}
                           </div>
                         </div>
                       )}
-                      {result.missingSkills.length > 0 && (
+                      {safeArr<string>(result.missingSkills).length > 0 && (
                         <div>
                           <p className="text-xs font-medium text-red-700 mb-1 flex items-center gap-1">
-                            <XCircle className="w-3.5 h-3.5" /> 缺失 ({result.missingSkills.length})
+                            <XCircle className="w-3.5 h-3.5" /> 缺失 ({safeArr<string>(result.missingSkills).length})
                           </p>
                           <div className="flex flex-wrap gap-1">
-                            {result.missingSkills.map((s, j) => <span key={j} className="px-2 py-0.5 bg-red-50 text-red-700 rounded text-xs">{s}</span>)}
+                            {safeArr<string>(result.missingSkills).map((s, j) => <span key={j} className="px-2 py-0.5 bg-red-50 text-red-700 rounded text-xs">{s}</span>)}
                           </div>
                         </div>
                       )}
@@ -316,25 +342,25 @@ function MatchPage() {
                     <p className="text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
                       <Lightbulb className="w-3.5 h-3.5" /> 优化建议
                     </p>
-                    {result.suggestions.map((s, j) => <p key={j} className="text-xs text-gray-500 ml-4 leading-relaxed list-disc">• {s}</p>)}
+                    {safeArr<string>(result.suggestions).map((s, j) => <p key={j} className="text-xs text-gray-500 ml-4 leading-relaxed list-disc">• {s}</p>)}
                   </div>
 
                   {/* Job Details */}
                   <div className="bg-white rounded-lg p-3 border border-gray-100">
                     <p className="text-xs font-medium text-gray-700 mb-1">岗位描述</p>
                     <p className="text-xs text-gray-500 leading-relaxed">{result.job.description}</p>
-                    {result.job.skills && (
+                    {safeArr<string>(result.job.skills).length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1">
-                        {result.job.skills.map((s: string, j: number) => <span key={j} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">{s}</span>)}
+                        {safeArr<string>(result.job.skills).map((s, j) => <span key={j} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">{s}</span>)}
                       </div>
                     )}
-                    {result.job.benefits && (
+                    {safeArr<string>(result.job.benefits).length > 0 && (
                       <div className="mt-2">
                         <p className="text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
                           <Gift className="w-3.5 h-3.5" /> 福利
                         </p>
                         <div className="flex flex-wrap gap-1">
-                          {result.job.benefits.map((b: string, j: number) => <span key={j} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded text-xs">{b}</span>)}
+                          {safeArr<string>(result.job.benefits).map((b, j) => <span key={j} className="px-2 py-0.5 bg-orange-50 text-orange-700 rounded text-xs">{b}</span>)}
                         </div>
                       </div>
                     )}

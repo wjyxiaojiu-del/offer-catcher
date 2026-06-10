@@ -26,6 +26,49 @@ interface UseChatSessionsOptions {
   maxSessions?: number
 }
 
+function normalizeMessage(value: unknown, index: number): ChatMessage | null {
+  if (!value || typeof value !== "object") return null
+  const message = value as Partial<ChatMessage>
+  if (message.role !== "user" && message.role !== "agent") return null
+
+  return {
+    id: typeof message.id === "string" && message.id ? message.id : `message-${index}`,
+    role: message.role,
+    content: typeof message.content === "string" ? message.content : "",
+    thinking: Array.isArray(message.thinking)
+      ? message.thinking.filter((step): step is string => typeof step === "string")
+      : undefined,
+    tasks: Array.isArray(message.tasks) ? message.tasks : undefined,
+    matches: Array.isArray(message.matches) ? message.matches : undefined,
+    timestamp: typeof message.timestamp === "number" && Number.isFinite(message.timestamp)
+      ? message.timestamp
+      : Date.now(),
+  }
+}
+
+export function normalizeChatSessions(value: unknown): Session[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((entry, sessionIndex) => {
+    if (!entry || typeof entry !== "object") return []
+    const session = entry as Partial<Session>
+    const messages = Array.isArray(session.messages)
+      ? session.messages
+          .map((message, messageIndex) => normalizeMessage(message, messageIndex))
+          .filter((message): message is ChatMessage => message !== null)
+      : []
+
+    return [{
+      id: typeof session.id === "string" && session.id ? session.id : `session-${sessionIndex}`,
+      title: typeof session.title === "string" && session.title ? session.title : "历史会话",
+      messages,
+      updatedAt: typeof session.updatedAt === "number" && Number.isFinite(session.updatedAt)
+        ? session.updatedAt
+        : Date.now(),
+    }]
+  })
+}
+
 /**
  * Manages chat session list + currently-active session, persisted to
  * localStorage. Pulled out of agent/page.tsx so the 721-line component
@@ -43,7 +86,8 @@ export function useChatSessions({ storageKey, maxSessions = 20 }: UseChatSession
 
   // Hydrate once from localStorage
   useEffect(() => {
-    const parsed = safeGetJSON<Session[]>(storageKey, [])
+    const parsed = normalizeChatSessions(safeGetJSON<unknown>(storageKey, []))
+    safeSetItem(storageKey, JSON.stringify(parsed))
     if (parsed.length > 0) {
       setSessions(parsed)
       setCurrentSessionId(parsed[0].id)

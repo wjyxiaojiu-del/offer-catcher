@@ -56,6 +56,10 @@ export function useAgentStream() {
         signal: controller.signal,
       })
 
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}))
+        throw new Error(errData.error?.message || errData.error || `请求失败 (${res.status})`)
+      }
       if (!res.body) throw new Error("无响应体")
 
       const reader = res.body.getReader()

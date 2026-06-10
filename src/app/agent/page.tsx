@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Bot, Target, PenLine, Paperclip, TrendingUp } from "lucide-react"
 import { useToast } from "@/components/ui/toast"
+import { getApiErrorMessage } from "@/lib/api-client"
 import { renderMarkdown } from "@/lib/markdown"
 import { scoreColor } from "@/lib/ui-utils"
 import { useChatSessions, type ChatMessage } from "@/hooks/useChatSessions"
@@ -135,7 +136,7 @@ export default function AgentPage() {
           if (data.resume) {
             text = data.resume.rawText
           } else {
-            toast(data.error || "文件解析失败", "error")
+            toast(getApiErrorMessage(data, "文件解析失败"), "error")
             return
           }
         } catch {

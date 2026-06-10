@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { callLLM } from "@/lib/ai"
 import { requireApiAccess } from "@/lib/api-guard"
 import { getDeviceIdFromRequest } from "@/lib/api-device"
+import { apiError } from "@/lib/api-response"
 
 // POST /api/greetings/generate - 生成 AI 招呼语
 export async function POST(req: Request) {
@@ -16,10 +17,7 @@ export async function POST(req: Request) {
     jobData = body.jobData
 
     if (!resumeId || !jobData) {
-      return NextResponse.json(
-        { error: "缺少必要参数" },
-        { status: 400 }
-      )
+      return apiError("缺少必要参数", "MISSING_PARAMS", 400)
     }
 
     // 获取简历信息
@@ -35,7 +33,7 @@ export async function POST(req: Request) {
     })
 
     if (!resume) {
-      return NextResponse.json({ error: "简历不存在" }, { status: 404 })
+      return apiError("简历不存在", "NOT_FOUND", 404)
     }
 
     // 构建简历摘要

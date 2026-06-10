@@ -191,11 +191,11 @@ export async function POST(req: Request) {
       }
 
       default:
-        return NextResponse.json({ error: "未知操作" }, { status: 400 })
+        return apiError("未知操作", "UNKNOWN_ACTION", 400)
     }
   } catch (error: any) {
     console.error("Boss API error:", error)
-    return NextResponse.json({ error: "操作失败" }, { status: 500 })
+    return apiError("操作失败", "BOSS_ERROR", 500)
   }
 }
 

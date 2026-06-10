@@ -9,6 +9,7 @@ import {
 import { CountUp } from "@/components/count-up"
 import { ApplicationSkeleton } from "@/components/skeleton"
 import { cn } from "@/lib/utils"
+import { getApiErrorMessage } from "@/lib/api-client"
 import type { Application, ApplicationStatus } from "@/types"
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string; icon: typeof Send }> = {
@@ -27,8 +28,11 @@ export default function ApplicationsPage() {
 
   useEffect(() => {
     fetch("/api/applications")
-      .then(r => r.json())
-      .then(data => {
+      .then(async r => {
+        const data = await r.json()
+        if (!r.ok) {
+          console.error(getApiErrorMessage(data, "获取投递记录失败"))
+        }
         setApplications(data.applications || [])
         setLoading(false)
       })
@@ -47,6 +51,9 @@ export default function ApplicationsPage() {
       })
       if (res.ok) {
         setApplications(prev => prev.map(a => a.id === id ? { ...a, status: newStatus as ApplicationStatus } : a))
+      } else {
+        const data = await res.json().catch(() => ({}))
+        console.error(getApiErrorMessage(data, "更新状态失败"))
       }
     } catch {
       // silently fail
@@ -58,6 +65,9 @@ export default function ApplicationsPage() {
       const res = await fetch(`/api/applications?id=${id}`, { method: "DELETE" })
       if (res.ok) {
         setApplications(prev => prev.filter(a => a.id !== id))
+      } else {
+        const data = await res.json().catch(() => ({}))
+        console.error(getApiErrorMessage(data, "删除失败"))
       }
     } catch {
       // silently fail

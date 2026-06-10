@@ -29,7 +29,8 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const toast = useCallback((message: string, type: ToastType = "info") => {
     const id = Math.random().toString(36).slice(2, 9)
-    setToasts((prev) => [...prev, { id, message, type }])
+    const safeMessage = typeof message === "string" ? message : JSON.stringify(message)
+    setToasts((prev) => [...prev, { id, message: safeMessage, type }])
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 3000)

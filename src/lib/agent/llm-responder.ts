@@ -65,9 +65,13 @@ export async function generateResponseByLLM(
 ): Promise<string | null> {
   try {
     const userPrompt = buildResponderUserPrompt(intent, completed, failed, ctx)
+    const responderTimeoutMs = Math.min(
+      Number(process.env.MIMO_TIMEOUT_MS) || 12000,
+      15000
+    )
     const result = await withTimeout(
       callLLM(RESPONDER_SYSTEM_PROMPT, userPrompt),
-      5000,
+      responderTimeoutMs,
       null,
       { silent: true }
     )
