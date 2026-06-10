@@ -90,7 +90,7 @@ describe("extractName", () => {
 
 describe("extractSkills", () => {
   it("detects common tech skills", () => {
-    const skills = extractSkills("熟练掌握 React, TypeScript, Node.js")
+    const { skills } = extractSkills("熟练掌握 React, TypeScript, Node.js")
     expect(skills).toContain("React")
     expect(skills).toContain("TypeScript")
     expect(skills).toContain("Node.js")
@@ -98,20 +98,34 @@ describe("extractSkills", () => {
 
   it("detects skills from a longer resume text", () => {
     const text = "本人熟悉 Python 和 Java 编程，了解 Docker 和 Kubernetes 部署"
-    const skills = extractSkills(text)
+    const { skills } = extractSkills(text)
     expect(skills.some((s) => /python/i.test(s))).toBe(true)
     expect(skills.some((s) => /java/i.test(s))).toBe(true)
   })
 
-  it("returns empty array for text with no skills", () => {
-    const skills = extractSkills("这是一段普通文字，没有技术关键词")
+  it("returns empty arrays for text with no skills", () => {
+    const { skills, skillGrades } = extractSkills("这是一段普通文字，没有技术关键词")
     expect(Array.isArray(skills)).toBe(true)
+    expect(Array.isArray(skillGrades)).toBe(true)
   })
 
   it("does not return duplicate skills", () => {
-    const skills = extractSkills("React React React")
+    const { skills } = extractSkills("React React React")
     const reactCount = skills.filter((s) => s === "React").length
     expect(reactCount).toBeLessThanOrEqual(1)
+  })
+
+  it("grades skills from skill section as core", () => {
+    const text = "技能：React, TypeScript\n项目经历\n使用 Python 开发"
+    const { skillGrades } = extractSkills(text)
+    const reactGrade = skillGrades.find(sg => sg.skill === "React")
+    expect(reactGrade?.grade).toBe("core")
+  })
+
+  it("caps total skills at 15", () => {
+    const text = "技能：React, Vue, Angular, TypeScript, JavaScript, Python, Java, Go, Rust, Docker, Kubernetes, MySQL, PostgreSQL, Redis, MongoDB, Git, Linux"
+    const { skills } = extractSkills(text)
+    expect(skills.length).toBeLessThanOrEqual(15)
   })
 })
 

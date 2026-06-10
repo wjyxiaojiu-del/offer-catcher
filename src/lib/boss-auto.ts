@@ -34,6 +34,63 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3, baseDelay = 20
   throw new Error("unreachable")
 }
 
+// ── Human-like behavior helpers ───────────────────────────────────────────
+
+/** Sleep for a random duration within a range */
+function randomDelay(min: number, max: number): Promise<void> {
+  const ms = Math.floor(min + Math.random() * (max - min))
+  return new Promise(r => setTimeout(r, ms))
+}
+
+/** Simulate human scrolling: multiple small scrolls with pauses */
+async function humanLikeScroll(page: Page, direction: "up" | "down" = "down"): Promise<void> {
+  const scrolls = 2 + Math.floor(Math.random() * 4) // 2–5 small scrolls
+  for (let i = 0; i < scrolls; i++) {
+    const distance = 150 + Math.floor(Math.random() * 300)
+    await page.evaluate((d) => window.scrollBy(0, d), direction === "down" ? distance : -distance)
+    await randomDelay(400, 1200)
+  }
+}
+
+/** Move mouse to target element with easing (looks human) */
+async function humanLikeMove(page: Page, target: any, padding = 5): Promise<void> {
+  const box = await target.boundingBox()
+  if (!box) return
+  const destX = box.x + padding + Math.random() * (box.width - padding * 2)
+  const destY = box.y + padding + Math.random() * (box.height - padding * 2)
+
+  // Get current mouse position (default to viewport center if unknown)
+  let startX = 640
+  let startY = 400
+  try {
+    const mousePos = await page.evaluate(() => ({ x: (window as any).__mouseX ?? 640, y: (window as any).__mouseY ?? 400 }))
+    startX = mousePos.x
+    startY = mousePos.y
+  } catch { /* ignore */ }
+
+  // Track mouse position via injected script
+  await page.evaluate(() => {
+    if (!(window as any).__mouseTrackerInstalled) {
+      document.addEventListener("mousemove", (e) => {
+        ;(window as any).__mouseX = e.clientX
+        ;(window as any).__mouseY = e.clientY
+      })
+      ;(window as any).__mouseTrackerInstalled = true
+    }
+  })
+
+  const steps = 8 + Math.floor(Math.random() * 8)
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps
+    // Ease-in-out cubic
+    const ease = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+    const x = startX + (destX - startX) * ease + (Math.random() - 0.5) * 10
+    const y = startY + (destY - startY) * ease + (Math.random() - 0.5) * 10
+    await page.mouse.move(Math.max(0, x), Math.max(0, y))
+    await randomDelay(10, 40)
+  }
+}
+
 export class BossAuto {
   private browser: Browser | null = null
   private context: BrowserContext | null = null
@@ -202,6 +259,10 @@ export class BossAuto {
       await this.page!.waitForTimeout(3000)
     })
 
+    // Human-like behavior: scroll down a bit to mimic browsing
+    await humanLikeScroll(this.page, "down")
+    await randomDelay(2000, 4000)
+
     const jobs: BossJob[] = []
 
     // Parse job cards
@@ -259,24 +320,34 @@ export class BossAuto {
         })
       }
 
-      // Find and click "立即沟通" button
+      // Human-like behavior: scroll to read JD before clicking "沟通"
+      await humanLikeScroll(this.page, "down")
+      await randomDelay(2000, 5000)
+
+      // Find and hover over "立即沟通" button (human-like move)
       const chatBtn = await this.page.$(SELECTORS.chatBtn)
       if (!chatBtn) {
         return { success: false, message: "未找到沟通按钮" }
       }
 
+      await humanLikeMove(this.page, chatBtn)
+      await randomDelay(300, 800)
       await chatBtn.click()
       await this.page.waitForTimeout(2000)
 
       // Find greeting input and send
       const chatInput = await this.page.$(SELECTORS.chatInput)
       if (chatInput) {
+        await chatInput.click()
+        await randomDelay(200, 600)
         await chatInput.fill(greeting)
         await this.page.waitForTimeout(500)
 
         // Click send button
         const sendBtn = await this.page.$(SELECTORS.sendBtn)
         if (sendBtn) {
+          await humanLikeMove(this.page, sendBtn)
+          await randomDelay(200, 500)
           await sendBtn.click()
           await this.page.waitForTimeout(1000)
           return { success: true, message: "已发送打招呼" }
@@ -309,9 +380,16 @@ export class BossAuto {
     resumeSkills: string[],
     onProgress?: (job: BossJob, result: { success: boolean; message: string }) => void
   ): Promise<BossJob[]> {
-    const jobs = await this.searchJobs(config)
-    const toApply = jobs.slice(0, config.maxApply)
+    // Use user-selected jobs if provided, otherwise search fresh
+    let toApply: BossJob[] = config.selectedJobs ?? []
+    if (toApply.length === 0) {
+      const jobs = await this.searchJobs(config)
+      toApply = jobs.slice(0, config.maxApply)
+    }
+
     const results: BossJob[] = []
+    const delayMin = config.delayMin ?? 15000
+    const delayMax = config.delayMax ?? 25000
 
     for (const job of toApply) {
       // Generate personalized greeting
@@ -326,8 +404,8 @@ export class BossAuto {
 
       onProgress?.(job, result)
 
-      // Random delay to avoid detection
-      const delay = 3000 + Math.random() * 5000
+      // Conservative random delay (default 15-25s) to stay under BOSS radar
+      const delay = Math.floor(delayMin + Math.random() * (delayMax - delayMin))
       await this.page?.waitForTimeout(delay)
     }
 

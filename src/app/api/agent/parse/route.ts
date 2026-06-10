@@ -4,6 +4,7 @@ import { withTimeout, sanitizeText } from "@/lib/utils"
 import { requireApiAccess } from "@/lib/api-guard"
 import { extractTextFromFile, FileTooLargeError, UnsupportedFileError } from "@/lib/file-extract"
 import { buildResumeWriteData } from "@/lib/resume-mapper"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 import type { ParsedResume } from "@/types"
 import type { AgentRunResult } from "@/lib/agent/resume-agents"
 
@@ -75,8 +76,9 @@ export async function POST(req: Request) {
     let resumeId: string | undefined
     try {
       const { prisma } = await import("@/lib/db")
+      const deviceId = getDeviceIdFromRequest(req)
       const saved = await prisma.resume.create({
-        data: buildResumeWriteData(resume),
+        data: { ...buildResumeWriteData(resume), deviceId: deviceId || undefined },
       })
       resumeId = saved.id
     } catch (dbErr) {

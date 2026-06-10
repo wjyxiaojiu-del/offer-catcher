@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db"
 import { aiAnalyzeMatch } from "@/lib/ai"
 import { requireApiAccess } from "@/lib/api-guard"
 import { dbResumeToParsed } from "@/lib/resume-mapper"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 
 // POST /api/jobs/match - 岗位匹配检查
 export async function POST(req: Request) {
@@ -20,8 +21,9 @@ export async function POST(req: Request) {
     }
 
     // 获取简历信息
-    const resume = await prisma.resume.findUnique({
-      where: { id: resumeId },
+    const deviceId = getDeviceIdFromRequest(req)
+    const resume = await prisma.resume.findFirst({
+      where: { id: resumeId, deviceId: deviceId || undefined },
       include: {
         skills: true,
         educations: true,

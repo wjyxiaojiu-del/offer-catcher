@@ -1,4 +1,4 @@
-import type { Job } from "@/types"
+import type { Job, SkillGrade } from "@/types"
 import type { ParsedResume, MatchResult } from "@/types"
 import { getUniversityBonus } from "@/data/universities"
 
@@ -34,13 +34,17 @@ const SKILL_SYNONYMS: Record<string, string[]> = {
   "rust": ["rustlang"],
   "kotlin": ["kt"],
   "swift": ["swiftui"],
-  // Database
-  "sql": ["mysql", "postgresql", "sqlite", "oracle", "mssql", "mariadb"],
+  // Database - split overly broad groups
+  "mysql": ["mariadb"],
+  "postgresql": ["postgres", "pg"],
+  "sqlite": [],
+  "oracle": ["oracle数据库"],
+  "mssql": ["sql server"],
   "mongodb": ["mongo", "nosql", "文档数据库"],
   "redis": ["缓存", "cache", "memcached"],
   "elasticsearch": ["es", "搜索", "elk"],
-  "postgres": ["postgresql", "pg", "关系型数据库"],
   "prisma": ["orm", "typeorm", "sequelize", "drizzle"],
+  "sql": ["结构化查询语言"],
   // DevOps
   "docker": ["容器", "container", "容器化"],
   "kubernetes": ["k8s", "容器编排"],
@@ -91,25 +95,26 @@ function normalizeSkill(s: string): string {
   return s.toLowerCase().replace(/[.\-_]/g, "").trim()
 }
 
-type Weights = { skill: number; edu: number; exp: number; kw: number }
+type Weights = { skill: number; edu: number; exp: number; project: number }
 
 /**
  * Calculate dynamic weights based on job type.
+ * 4 dimensions: skill (merged with keywords), education, experience, project.
  * Exported for direct testing.
  */
 export function calculateWeights(job: Pick<Job, "experience" | "tags">): Weights {
-  // Default weights
-  let weights: Weights = { skill: 0.40, edu: 0.20, exp: 0.15, kw: 0.25 }
+  // Default weights (4 dimensions, skill absorbs keyword weight)
+  let weights: Weights = { skill: 0.45, edu: 0.15, exp: 0.20, project: 0.20 }
 
   // For research/AI jobs, education matters more
   if (job.tags.some(t => ["AI", "算法", "研究", "NLP", "CV"].includes(t))) {
-    weights = { skill: 0.35, edu: 0.25, exp: 0.15, kw: 0.25 }
+    weights = { skill: 0.40, edu: 0.20, exp: 0.20, project: 0.20 }
   }
 
   // For entry-level jobs, skills matter more.
   // Use regex to match "0-N年" pattern at the start, avoiding false positives like "10-15年".
   if (/^0[-~]\d/.test(job.experience.trim())) {
-    weights = { skill: 0.45, edu: 0.20, exp: 0.10, kw: 0.25 }
+    weights = { skill: 0.50, edu: 0.15, exp: 0.10, project: 0.25 }
   }
 
   return weights
@@ -117,10 +122,10 @@ export function calculateWeights(job: Pick<Job, "experience" | "tags">): Weights
 
 export function matchResumeToJobs(resume: ParsedResume, jobs: Job[]): MatchResult[] {
   return jobs.map(job => {
-    const skillResult = calculateSkillMatch(resume.skills, job.skills, resume.rawText)
+    const skillResult = calculateSkillMatch(resume.skills, resume.rawText, job, resume.skillGrades)
     const educationMatch = calculateEducationMatch(resume.education, job.education)
     const experienceMatch = calculateExperienceMatch(resume.experience, job.experience)
-    const keywordMatch = calculateKeywordMatch(resume.rawText, job)
+    const projectMatch = calculateProjectScore(resume.projects, job)
 
     const weights = calculateWeights(job)
 
@@ -128,7 +133,7 @@ export function matchResumeToJobs(resume: ParsedResume, jobs: Job[]): MatchResul
       skillResult.score * weights.skill +
       educationMatch * weights.edu +
       experienceMatch * weights.exp +
-      keywordMatch * weights.kw
+      projectMatch * weights.project
     )
 
     const suggestions = generateSuggestions(resume, job, skillResult)
@@ -141,7 +146,7 @@ export function matchResumeToJobs(resume: ParsedResume, jobs: Job[]): MatchResul
       skillMatch: skillResult.score,
       educationMatch,
       experienceMatch,
-      keywordMatch,
+      requiredSkillCoverage: skillResult.requiredCoverage,
       matchedSkills: skillResult.matched,
       missingSkills: skillResult.missing,
       suggestions,
@@ -161,7 +166,8 @@ function isDirectMatch(resumeSkill: string, jobSkill: string): boolean {
   // Mutual inclusion with length guard — prevents Java ↔ JavaScript contamination
   const longer = Math.max(normalizedR.length, normalizedJ.length)
   const shorter = Math.min(normalizedR.length, normalizedJ.length)
-  if (longer - shorter > 2 && longer / shorter > 1.3) return false
+  // Strict length guard: difference must be small relative to shorter string
+  if (longer - shorter > 1 && longer / shorter > 1.2) return false
 
   return normalizedR.includes(normalizedJ) || normalizedJ.includes(normalizedR)
 }
@@ -181,53 +187,177 @@ function isSynonymMatch(jobSkill: string, resumeSkill: string): boolean {
   return false
 }
 
-function calculateSkillMatch(resumeSkills: string[], jobSkills: string[], rawText: string): { score: number; matched: string[]; missing: string[] } {
-  if (jobSkills.length === 0) return { score: 50, matched: [], missing: [] }
-
+/**
+ * Unified skill match: merges direct skill matching + weighted keyword matching.
+ *
+ * Tiers:
+ *   requiredSkills / job.skills: weight 3  (core competencies)
+ *   niceToHaveSkills:            weight 1.5 (bonus)
+ *   requirements[] keywords:     weight 1.5 (explicit requirements)
+ *   description keywords:        weight 0.5 (contextual, low signal)
+ *
+ * Returns: { score, matched, missing, requiredCoverage }
+ *   - score: weighted match percentage [0, 100]
+ *   - matched: which job skills were found in resume
+ *   - missing: which job skills were NOT found
+ *   - requiredCoverage: % of requiredSkills matched (0-100)
+ */
+function calculateSkillMatch(
+  resumeSkills: string[],
+  rawText: string,
+  job: Pick<Job, "skills" | "requiredSkills" | "niceToHaveSkills" | "requirements" | "description">,
+  skillGrades?: SkillGrade[]
+): { score: number; matched: string[]; missing: string[]; requiredCoverage: number } {
   const normalizedResume = resumeSkills.map(normalizeSkill)
-  const lowerText = rawText.toLowerCase()
-  const matched: string[] = []
-  const missing: string[] = []
 
-  for (const jobSkill of jobSkills) {
-    const jobSkillLower = normalizeSkill(jobSkill)
-    let isMatch = false
-
-    // Direct match with length guard
-    if (normalizedResume.some(rs => isDirectMatch(rs, jobSkillLower))) {
-      isMatch = true
+  // Grade multiplier: core skills get full credit, project/general get reduced
+  const gradeMultiplier = (resumeSkill: string): number => {
+    if (!skillGrades) return 1.0
+    const grade = skillGrades.find(sg => normalizeSkill(sg.skill) === normalizeSkill(resumeSkill))
+    if (!grade) return 1.0
+    switch (grade.grade) {
+      case "core": return 1.0
+      case "project": return 0.9
+      case "general": return 0.7
     }
+  }
+  const lowerText = (rawText || "").toLowerCase()
 
-    // Synonym match
-    if (!isMatch) {
-      if (normalizedResume.some(rs => isSynonymMatch(jobSkill, rs))) {
-        isMatch = true
-      }
+  // Build weighted keyword list from job
+  const coreSkills = job.requiredSkills?.length ? job.requiredSkills : job.skills
+  const weightedItems: { word: string; weight: number; isCore: boolean }[] = []
+
+  // Tier 1: required skills (weight 3)
+  for (const s of coreSkills) {
+    weightedItems.push({ word: s, weight: 3, isCore: true })
+  }
+  // Tier 2: nice-to-have skills (weight 1.5)
+  for (const s of job.niceToHaveSkills ?? []) {
+    if (!coreSkills.some(c => normalizeSkill(c) === normalizeSkill(s))) {
+      weightedItems.push({ word: s, weight: 1.5, isCore: false })
     }
+  }
+  // Tier 3: technical keywords from requirements (weight 1.5)
+  const reqStopWords = new Set(["优先", "熟悉", "了解", "负责", "具有", "具备", "以上", "经验", "能力", "相关", "良好", "较强", "丰富", "优秀", "熟练", "掌握", "参与", "能够", "优先考虑", "学历", "本科", "硕士", "博士", "优先", "有相关", "加分", "优先"])
+  const reqKeywords = job.requirements
+    .flatMap(r => r.split(/[，,、;；\s]+/))
+    .map(w => w.trim())
+    .filter(w => w.length >= 3 && !reqStopWords.has(w) && !/^[a-zA-Z]{1,3}$/.test(w))
 
-    // Fuzzy match in raw text (word boundary)
-    if (!isMatch) {
-      const regex = new RegExp(`\\b${escapeRegex(jobSkillLower)}\\b`, "i")
-      if (regex.test(lowerText)) {
-        isMatch = true
-      }
-    }
-
-    // Levenshtein for typo tolerance (tightened threshold: 1 for words > 4 chars)
-    if (!isMatch) {
-      const threshold = jobSkillLower.length > 4 ? 1 : 2
-      isMatch = normalizedResume.some(rs => levenshteinDistance(rs, jobSkillLower) <= threshold && jobSkillLower.length > 3)
-    }
-
-    if (isMatch) {
-      matched.push(jobSkill)
-    } else {
-      missing.push(jobSkill)
+  for (const kw of reqKeywords) {
+    if (!weightedItems.some(item => normalizeSkill(item.word) === normalizeSkill(kw))) {
+      weightedItems.push({ word: kw, weight: 1.5, isCore: false })
     }
   }
 
-  const score = Math.round((matched.length / jobSkills.length) * 100)
-  return { score, matched, missing }
+  // Tier 4: technical keywords from description (weight 0.5)
+  // Heavy filtering to reduce noise: only keep technical-looking terms
+  const descStopWords = new Set([...Array.from(reqStopWords), "工作", "开发", "技术", "项目", "团队", "公司", "产品", "系统", "平台", "业务", "需求", "方案", "流程", "规范", "文档", "负责", "支持", "优化", "维护", "设计", "分析", "管理", "实现", "构建", "部署", "测试", "上线", "迭代", "沟通", "协作", "推动", "落地"])
+  const descKeywords = job.description
+    .split(/[，,、;；。.：:！!？?\s]+/)
+    .map(w => w.trim())
+    .filter(w => {
+      if (w.length < 3 || descStopWords.has(w)) return false
+      // For English: must be 4+ chars to be a meaningful technical term
+      if (/^[a-zA-Z]+$/.test(w) && w.length < 4) return false
+      // For CJK: filter out pure verb/adj phrases (heuristic: skip if starts with common verb chars)
+      if (/^[了的在是不有这我他她它们你会就也而把被让给]/.test(w)) return false
+      return true
+    })
+
+  for (const kw of descKeywords) {
+    if (!weightedItems.some(item => normalizeSkill(item.word) === normalizeSkill(kw))) {
+      weightedItems.push({ word: kw, weight: 0.5, isCore: false })
+    }
+  }
+
+  // Match each weighted item against resume
+  const matched: string[] = []
+  const missing: string[] = []
+  const matchedCore: string[] = []
+  let totalWeight = 0
+  let matchedWeight = 0
+
+  for (const item of weightedItems) {
+    totalWeight += item.weight
+    const jobSkillLower = normalizeSkill(item.word)
+    let isMatch = false
+    let matchedResumeSkill: string | undefined
+
+    // 1. Direct match (resume skills array)
+    const directHit = resumeSkills.find(rs => isDirectMatch(normalizeSkill(rs), jobSkillLower))
+    if (directHit) {
+      isMatch = true
+      matchedResumeSkill = directHit
+    }
+
+    // 2. Synonym match (resume skills array)
+    if (!isMatch) {
+      const synonymHit = resumeSkills.find(rs => isSynonymMatch(item.word, rs))
+      if (synonymHit) {
+        isMatch = true
+        matchedResumeSkill = synonymHit
+      }
+    }
+
+    // 3. Fuzzy match in raw text (word boundary for Latin, includes for CJK)
+    if (!isMatch) {
+      if (/[一-龥]/.test(item.word)) {
+        isMatch = lowerText.includes(jobSkillLower)
+      } else {
+        const regex = new RegExp(`\\b${escapeRegex(jobSkillLower)}\\b`, "i")
+        isMatch = regex.test(lowerText)
+      }
+    }
+
+    // 4. Levenshtein typo tolerance
+    if (!isMatch) {
+      const threshold = jobSkillLower.length > 4 ? 1 : 2
+      const levenshteinHit = resumeSkills.find(rs => levenshteinDistance(normalizeSkill(rs), jobSkillLower) <= threshold && jobSkillLower.length > 3)
+      if (levenshteinHit) {
+        isMatch = true
+        matchedResumeSkill = levenshteinHit
+      }
+    }
+
+    if (isMatch) {
+      // Apply grade multiplier: core=1.0, project=0.9, general=0.7
+      const multiplier = matchedResumeSkill ? gradeMultiplier(matchedResumeSkill) : 1.0
+      matchedWeight += item.weight * multiplier
+      if (item.isCore) matchedCore.push(item.word)
+    } else {
+      // Only report core/nice-to-have skills as "missing", not noise keywords
+      if (item.weight >= 1.5) {
+        missing.push(item.word)
+      }
+    }
+  }
+
+  // Report matched skills (all tiers)
+  for (const item of weightedItems) {
+    const jobSkillLower = normalizeSkill(item.word)
+    const wasMatched =
+      normalizedResume.some(rs => isDirectMatch(rs, jobSkillLower)) ||
+      normalizedResume.some(rs => isSynonymMatch(item.word, rs)) ||
+      (/[一-龥]/.test(item.word) ? lowerText.includes(jobSkillLower) : new RegExp(`\\b${escapeRegex(jobSkillLower)}\\b`, "i").test(lowerText)) ||
+      normalizedResume.some(rs => levenshteinDistance(rs, jobSkillLower) <= (jobSkillLower.length > 4 ? 1 : 2) && jobSkillLower.length > 3)
+    if (wasMatched && item.weight >= 1.5) {
+      if (!matched.includes(item.word)) matched.push(item.word)
+    }
+  }
+
+  // Required skill coverage (what % of requiredSkills are matched)
+  const requiredTotal = coreSkills.length
+  const requiredMatched = coreSkills.filter(s => {
+    const n = normalizeSkill(s)
+    return normalizedResume.some(rs => isDirectMatch(rs, n)) ||
+      normalizedResume.some(rs => isSynonymMatch(s, rs)) ||
+      (/[一-龥]/.test(s) ? lowerText.includes(n) : new RegExp(`\\b${escapeRegex(n)}\\b`, "i").test(lowerText))
+  }).length
+  const requiredCoverage = requiredTotal > 0 ? Math.round((requiredMatched / requiredTotal) * 100) : 100
+
+  const score = totalWeight > 0 ? Math.min(Math.round((matchedWeight / totalWeight) * 100), 100) : 50
+  return { score, matched, missing, requiredCoverage }
 }
 
 function calculateEducationMatch(educations: { degree: string; school?: string }[], jobEducation: string): number {
@@ -374,84 +504,6 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
-export function calculateKeywordMatch(text: string, job: Job): number {
-  const lowerText = text.toLowerCase()
-
-  // Tokenize text into words for word-boundary matching (min length 3 to reduce noise)
-  const words = new Set(lowerText.split(/[\s,，、.。;；:：!！?？()（）\[\]{}]+/).filter(w => w.length > 2))
-
-  // Collect keywords from job with tiered weights:
-  //   skills/requiredSkills: 3x (core competencies)
-  //   requirements: 2x (explicit requirements)
-  //   niceToHaveSkills: 1.5x
-  //   description: 1x (general context)
-  const weightedKeywords: { word: string; weight: number }[] = []
-
-  for (const skill of (job.requiredSkills?.length ? job.requiredSkills : job.skills)) {
-    weightedKeywords.push({ word: skill.toLowerCase(), weight: 3 })
-  }
-  for (const skill of job.niceToHaveSkills ?? []) {
-    weightedKeywords.push({ word: skill.toLowerCase(), weight: 1.5 })
-  }
-
-  // Extract keywords from requirements (2x weight)
-  const reqStopWords = new Set(["优先", "熟悉", "了解", "负责", "具有", "具备", "以上", "经验", "能力", "相关", "良好", "较强", "丰富", "优秀", "熟练", "掌握", "参与", "能够", "优先考虑", "优先", "学历", "本科", "硕士", "博士"])
-  const reqWords = job.requirements
-    .flatMap(r => r.split(/[，,、\s]+/))
-    .map(w => w.toLowerCase().trim())
-    .filter(w => w.length > 2 && !reqStopWords.has(w))
-
-  for (const w of reqWords) {
-    if (!weightedKeywords.some(k => k.word === w)) {
-      weightedKeywords.push({ word: w, weight: 2 })
-    }
-  }
-
-  // Extract keywords from description (1x weight)
-  const descStopWords = new Set([...Array.from(reqStopWords), "工作", "开发", "技术", "项目", "团队", "公司", "产品", "系统", "平台", "业务", "需求", "方案", "流程", "规范", "文档"])
-  const descWords = job.description
-    .split(/[，,、\s]+/)
-    .map(w => w.toLowerCase().trim())
-    .filter(w => w.length > 2 && !descStopWords.has(w))
-
-  for (const w of descWords) {
-    if (!weightedKeywords.some(k => k.word === w)) {
-      weightedKeywords.push({ word: w, weight: 1 })
-    }
-  }
-
-  // Deduplicate
-  const seen = new Set<string>()
-  const unique = weightedKeywords.filter(k => {
-    if (seen.has(k.word)) return false
-    seen.add(k.word)
-    return true
-  })
-
-  let totalWeight = 0
-  let matchedWeight = 0
-
-  for (const kw of unique) {
-    totalWeight += kw.weight
-    // Try word boundary match first (most accurate)
-    const boundaryRegex = new RegExp(`\\b${escapeRegex(kw.word)}\\b`, "i")
-    if (boundaryRegex.test(lowerText)) {
-      matchedWeight += kw.weight
-      continue
-    }
-    // Fallback: check if text contains this word as substring (for CJK)
-    if (/[一-龥]/.test(kw.word) && lowerText.includes(kw.word)) {
-      matchedWeight += kw.weight * 0.7 // partial credit for CJK substring match
-      continue
-    }
-    // Check word-level match in tokenized text
-    if (words.has(kw.word)) {
-      matchedWeight += kw.weight * 0.8
-    }
-  }
-
-  return Math.min(Math.round((matchedWeight / Math.max(totalWeight, 1)) * 100), 100)
-}
 
 function generateSuggestions(resume: ParsedResume, job: Job, skillResult: { matched: string[]; missing: string[] }): string[] {
   const suggestions: string[] = []
@@ -616,10 +668,9 @@ export function generateOptimizationReport(resume: ParsedResume, job: Job): {
   overallScore: number
   sections: { title: string; score: number; feedback: string; improvements: string[]; icon: string }[]
 } {
-  const skillResult = calculateSkillMatch(resume.skills, job.skills, resume.rawText)
+  const skillResult = calculateSkillMatch(resume.skills, resume.rawText, job, resume.skillGrades)
   const eduScore = calculateEducationMatch(resume.education, job.education)
   const expScore = calculateExperienceMatch(resume.experience, job.experience)
-  const kwScore = calculateKeywordMatch(resume.rawText, job)
 
   const sections = [
     {
@@ -661,16 +712,6 @@ export function generateOptimizationReport(resume: ParsedResume, job: Job): {
         ? ["建议增加 2-3 个与岗位相关的项目", "每个项目突出技术栈和量化成果"]
         : ["建议为每个项目补充量化成果描述"],
       icon: "🚀"
-    },
-    {
-      title: "关键词覆盖",
-      score: kwScore,
-      feedback: kwScore >= 70 ? "JD 关键词覆盖良好" :
-                kwScore >= 40 ? "部分关键词缺失" : "关键词覆盖不足，可能被 ATS 筛掉",
-      improvements: kwScore < 70
-        ? ["对照 JD 逐条检查关键词覆盖", "用 JD 中的原词替换简历中的同义词"]
-        : ["关键词覆盖充分"],
-      icon: "🔑"
     },
     {
       title: "简历完整性",

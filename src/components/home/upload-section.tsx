@@ -37,6 +37,7 @@ export function UploadSection() {
   const [isDragging, setIsDragging] = useState(false)
   const [uploadedFile, setUploadedFile] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
+  const [resumeId, setResumeId] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
   const { toast } = useToast()
@@ -61,7 +62,9 @@ export function UploadSection() {
         const data = await res.json()
         if (data.resume) {
           setResumeText(data.resume.rawText)
-          if (data.resumeId) sessionStorage.setItem("resumeId", data.resumeId)
+          if (data.resumeId) {
+            setResumeId(data.resumeId)
+          }
         }
         else toast(data.error || "文件解析失败", "error")
       } catch { toast("文件上传失败，请重试", "error") }
@@ -75,15 +78,35 @@ export function UploadSection() {
     if (file) handleFileUpload(file)
   }, [handleFileUpload])
 
-  const handleSubmit = () => {
+  const handleSubmit = async (targetPath: string) => {
     if (!resumeText.trim()) return
-    sessionStorage.setItem("resumeText", resumeText)
-    router.push("/match")
+    let id = resumeId
+    if (!id) {
+      setIsProcessing(true)
+      try {
+        const res = await fetch("/api/resume", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: resumeText }),
+        })
+        const data = await res.json()
+        id = data.resumeId ?? null
+      } catch {
+        toast("简历解析失败，请重试", "error")
+      }
+      setIsProcessing(false)
+    }
+    if (!id) {
+      toast("请先上传简历或粘贴简历内容", "error")
+      return
+    }
+    router.push(`${targetPath}?resumeId=${id}`)
   }
 
   const handleSampleClick = () => {
     setResumeText(SAMPLE_RESUME)
     setUploadedFile("示例简历.txt")
+    setResumeId(null)
   }
 
   return (
@@ -132,7 +155,7 @@ export function UploadSection() {
         className="w-full h-40 border rounded-xl p-4 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none transition-all"
         placeholder="在此粘贴你的简历内容..."
         value={resumeText}
-        onChange={(e) => setResumeText(e.target.value)}
+        onChange={(e) => { setResumeText(e.target.value); setResumeId(null) }}
       />
 
       <div className="mt-4 flex flex-col sm:flex-row justify-between items-center gap-3">
@@ -141,28 +164,33 @@ export function UploadSection() {
           onClick={handleSampleClick}>
           使用示例简历体验
         </button>
-        <div className="flex gap-2 w-full sm:w-auto">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <button
-            className={`flex-1 sm:flex-none px-5 py-3 rounded-xl font-medium text-sm transition-all border-2
+            className={`flex-1 sm:flex-none px-4 py-3 rounded-xl font-medium text-sm transition-all border-2
               ${resumeText.trim()
                 ? "border-purple-500 text-purple-600 hover:bg-purple-50 active:scale-[0.98]"
                 : "border-gray-300 text-gray-400 cursor-not-allowed"}`}
-            onClick={() => {
-              if (!resumeText.trim()) return
-              sessionStorage.setItem("resumeText", resumeText)
-              router.push("/jd-optimize")
-            }}
+            onClick={() => handleSubmit("/jd-optimize")}
             disabled={!resumeText.trim()}>
             🎯 针对 JD 优化
           </button>
           <button data-demo="match-btn"
-            className={`flex-1 sm:flex-none px-8 py-3 rounded-xl font-medium text-white transition-all
+            className={`flex-1 sm:flex-none px-6 py-3 rounded-xl font-medium text-white transition-all
               ${resumeText.trim()
                 ? "bg-gradient-to-r from-blue-600 to-purple-600 hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
                 : "bg-gray-300 cursor-not-allowed"}`}
-            onClick={handleSubmit}
+            onClick={() => handleSubmit("/match")}
             disabled={!resumeText.trim()}>
             🚀 智能匹配
+          </button>
+          <button
+            className={`flex-1 sm:flex-none px-4 py-3 rounded-xl font-medium text-sm transition-all border-2
+              ${resumeText.trim()
+                ? "border-green-500 text-green-600 hover:bg-green-50 active:scale-[0.98]"
+                : "border-gray-300 text-gray-400 cursor-not-allowed"}`}
+            onClick={() => handleSubmit("/boss")}
+            disabled={!resumeText.trim()}>
+            🤖 BOSS 直聘
           </button>
         </div>
       </div>

@@ -1,0 +1,13 @@
+services:
+  offer-catcher:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: offer-catcher
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/prisma
+    restart: unless-stopped

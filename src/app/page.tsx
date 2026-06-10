@@ -1,15 +1,23 @@
+'use client'
+
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Target, Bot, BarChart3, Send, MessageSquare, ArrowRight, Sparkles } from "lucide-react"
 import { CountUp } from "@/components/count-up"
 import { UploadSection } from "@/components/home/upload-section"
 import { cn } from "@/lib/utils"
 
-const HERO_STATS = [
-  { value: 25, suffix: "+", label: "热门岗位" },
-  { value: 95, suffix: "%", label: "匹配精度" },
-  { value: 4, suffix: "维", label: "智能分析" },
-  { value: 3, suffix: "秒", label: "极速匹配" },
-]
+interface SiteStats {
+  jobs: number
+  questions: number
+  applications: number
+}
+
+const FALLBACK_STATS: SiteStats = {
+  jobs: 25,
+  questions: 0,
+  applications: 0,
+}
 
 const FEATURES = [
   { icon: Target, title: "智能岗位匹配", desc: "基于多维度算法分析简历与 JD 的匹配度，精准推荐最适合的岗位" },
@@ -28,6 +36,24 @@ const STEPS = [
 ]
 
 export default function Home() {
+  const [stats, setStats] = useState<SiteStats>(FALLBACK_STATS)
+
+  useEffect(() => {
+    fetch('/api/stats')
+      .then((res) => res.json())
+      .then((data: SiteStats) => setStats(data))
+      .catch(() => {
+        // 保持 fallback
+      })
+  }, [])
+
+  const HERO_STATS = [
+    { value: stats.jobs, suffix: "+", label: "热门岗位" },
+    { value: stats.questions, suffix: "+", label: "面试真题" },
+    { value: stats.applications, suffix: "+", label: "已投递" },
+    { value: 4, suffix: "维", label: "智能分析" },
+  ]
+
   return (
     <div className="min-h-[calc(100vh-56px)]">
       {/* Hero */}
@@ -135,7 +161,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="bg-gray-50 text-gray-400 py-8 text-center text-sm border-t border-gray-100">
         <p className="font-medium text-gray-600">Offer 捕手</p>
-        <p className="mt-1">AI 求职智能匹配系统 · 课程作业 Demo</p>
+        <p className="mt-1">AI 求职智能匹配系统 · 开源求职助手</p>
       </footer>
     </div>
   )

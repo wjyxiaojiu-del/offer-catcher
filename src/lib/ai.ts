@@ -7,15 +7,22 @@ const MODEL = process.env.MIMO_MODEL || "mimo-v2.5-pro"
 // gateway times out when the upstream stalls.
 const LLM_TIMEOUT_MS = Number(process.env.MIMO_TIMEOUT_MS) || 12000
 
-function getClient() {
+// Singleton OpenAI client (lazy initialization)
+let _client: OpenAI | null = null
+
+function getClient(): OpenAI {
   if (!process.env.MIMO_API_KEY) {
     throw new Error("MIMO_API_KEY is not configured")
   }
 
-  return new OpenAI({
-    apiKey: process.env.MIMO_API_KEY,
-    baseURL: process.env.MIMO_BASE_URL || "https://token-plan-sgp.xiaomimimo.com/v1",
-  })
+  if (!_client) {
+    _client = new OpenAI({
+      apiKey: process.env.MIMO_API_KEY,
+      baseURL: process.env.MIMO_BASE_URL || "https://token-plan-sgp.xiaomimimo.com/v1",
+    })
+  }
+
+  return _client
 }
 
 async function chat(systemPrompt: string, userPrompt: string): Promise<string> {

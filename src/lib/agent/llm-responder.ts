@@ -15,12 +15,27 @@ function buildResponderUserPrompt(
 ): string {
   const userInput = (intent.params.query as string) || ""
 
+  // Dynamic truncation based on task type
+  const getTruncateLimit = (agent: string): number => {
+    switch (agent) {
+      case "matchJobs":
+      case "analyzeTopMatches":
+        return 3000 // Matching results need more space
+      case "summarizeMatches":
+        return 2000
+      case "advisor":
+        return 2500
+      default:
+        return 1500
+    }
+  }
+
   const taskResults = completed.map((t) => ({
     id: t.id,
     name: t.name,
     agent: t.agent,
     status: t.status,
-    result: t.result ? JSON.stringify(t.result).slice(0, 800) : null,
+    result: t.result ? JSON.stringify(t.result).slice(0, getTruncateLimit(t.agent)) : null,
   }))
 
   const failedTasks = failed.map((t) => ({

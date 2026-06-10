@@ -74,6 +74,7 @@ describe("buildResumeWriteData", () => {
     email: "z@s.com",
     phone: "13800000000",
     skills: ["React"],
+    skillGrades: [{ skill: "React", grade: "core" }],
     education: [{ school: "清华", major: "CS", degree: "本科", year: "2024" }],
     experience: [{ company: "X", title: "Y", duration: "1y", description: "d" }],
     projects: [{ name: "P", description: "", techStack: ["a", "b"] }],

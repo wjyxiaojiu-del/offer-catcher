@@ -2,6 +2,7 @@ import { CareerAgent } from "@/lib/agent/career-agent"
 import { withTimeout } from "@/lib/utils"
 import { requireApiAccess } from "@/lib/api-guard"
 import { AgentChatBodySchema } from "@/lib/schemas"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 
 export const runtime = "nodejs"
 
@@ -28,7 +29,9 @@ export async function POST(req: Request) {
     )
   }
 
-  const { message, resumeText } = parsed.data
+  const { message, resumeText, userId } = parsed.data
+  const deviceId = getDeviceIdFromRequest(req)
+  const effectiveUserId = userId || deviceId
   const sessionId = parsed.data.sessionId || crypto.randomUUID()
 
   const encoder = new TextEncoder()
@@ -44,7 +47,7 @@ export async function POST(req: Request) {
       }
 
       try {
-        const agent = new CareerAgent({ sessionId })
+        const agent = new CareerAgent({ sessionId, userId: effectiveUserId })
         await agent.init()
 
         // Parse resume if provided

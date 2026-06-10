@@ -50,6 +50,7 @@ export function dbResumeToParsed(record: DbResumeRecord): ParsedResume {
     source: record.source === "ai" ? "ai" : "rule",
     summary: record.summary || undefined,
     skills: record.skills.map((s) => s.name),
+    skillGrades: [],
     education: record.educations.map((e) => ({
       school: e.school,
       major: e.major,
@@ -82,7 +83,7 @@ export function dbResumeToParsed(record: DbResumeRecord): ParsedResume {
  */
 export function buildResumeWriteData(
   resume: ParsedResume,
-  opts: { forUpdate?: boolean } = {}
+  opts: { forUpdate?: boolean; userId?: string } = {}
 ) {
   const wrap = <T,>(create: T) =>
     opts.forUpdate ? { deleteMany: {}, create } : { create }
@@ -94,6 +95,7 @@ export function buildResumeWriteData(
     rawText: resume.rawText,
     source: resume.source || "rule",
     summary: resume.summary || "",
+    userId: opts.userId || undefined,
     educations: wrap(
       resume.education.map((e: Education) => ({
         school: e.school || "",

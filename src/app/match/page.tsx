@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import dynamic from "next/dynamic"
 import {
   FileText, User, GraduationCap, Zap, Briefcase, Rocket,
-  Target, KeyRound, Bot, CheckCircle2, XCircle, Lightbulb, Gift,
+  Target, Shield, Bot, CheckCircle2, XCircle, Lightbulb, Gift,
 } from "lucide-react"
 import { CountUp } from "@/components/count-up"
 import { MatchCardSkeleton, StatsSkeleton, ResumeSkeleton } from "@/components/skeleton"
@@ -26,7 +26,7 @@ const SCORE_CONFIG = [
   { label: "技能", key: "skillMatch" as const, icon: Target, color: "#22c55e" },
   { label: "学历", key: "educationMatch" as const, icon: GraduationCap, color: "#3b82f6" },
   { label: "经验", key: "experienceMatch" as const, icon: Briefcase, color: "#f59e0b" },
-  { label: "关键词", key: "keywordMatch" as const, icon: KeyRound, color: "#8b5cf6" },
+  { label: "覆盖度", key: "requiredSkillCoverage" as const, icon: Shield, color: "#8b5cf6" },
 ]
 
 const LEVEL_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -36,43 +36,45 @@ const LEVEL_STYLES: Record<string, { bg: string; text: string; label: string }> 
   weak: { bg: "bg-red-100", text: "text-red-700", label: "匹配度低" },
 }
 
-export default function MatchPage() {
+function MatchPage() {
   const [resume, setResume] = useState<ParsedResume | null>(null)
   const [results, setResults] = useState<MatchResult[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedJob, setSelectedJob] = useState<MatchResult | null>(null)
   const [filter, setFilter] = useState("all")
   const [applyingId, setApplyingId] = useState<string | null>(null)
+  const [resumeId, setResumeId] = useState<string | null>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
 
   useEffect(() => {
-    const text = sessionStorage.getItem("resumeText")
-    const resumeId = sessionStorage.getItem("resumeId")
-    if (!text) { router.push("/"); return }
+    const id = searchParams.get("resumeId")
+    if (!id) { router.push("/"); return }
 
-    fetch("/api/resume", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) })
+    setResumeId(id)
+
+    fetch(`/api/resume?id=${id}`)
       .then(r => r.json())
       .then(data => {
+        if (!data?.resume) { router.push("/"); setLoading(false); return }
         setResume(data.resume)
-        const body: Record<string, unknown> = { resume: data.resume }
-        if (resumeId) body.resumeId = resumeId
-        return fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+        return fetch("/api/match", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ resume: data.resume, resumeId: id }) })
       })
-      .then(r => r.json())
-      .then(data => { setResults(data.results); setLoading(false) })
+      .then(r => r?.json())
+      .then(data => { if (data) { setResults(data.results); setLoading(false) } })
       .catch(() => setLoading(false))
-  }, [router])
+  }, [router, searchParams])
 
   const handleApply = async (jobId: string, jobTitle: string, company: string) => {
     setApplyingId(jobId)
     try {
-      const res = await fetch("/api/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ jobId, resumeName: resume?.name }) })
+      const resumeId = searchParams.get("resumeId")
+      const body: Record<string, unknown> = { jobId, resumeName: resume?.name }
+      if (resumeId) body.resumeId = resumeId
+      const res = await fetch("/api/apply", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       const data = await res.json()
       if (data.success) {
-        const stored = JSON.parse(localStorage.getItem("applications") || "[]")
-        stored.unshift(data.application)
-        localStorage.setItem("applications", JSON.stringify(stored))
         toast(`已投递「${jobTitle}」@${company}`, "success")
       }
     } catch { toast("投递失败，请重试", "error") }
@@ -126,7 +128,7 @@ export default function MatchPage() {
               简历解析结果
             </h2>
             <div className="flex gap-3 self-start">
-              <button onClick={() => router.push("/resume/edit")}
+              <button onClick={() => router.push(`/resume/edit?resumeId=${resumeId}`)}
                 className="text-sm text-blue-600 hover:text-blue-800 font-medium">
                 编辑简历
               </button>
@@ -183,13 +185,19 @@ export default function MatchPage() {
       </div>
 
       {/* Action Bar */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h2 className="text-xl font-bold text-gray-900">匹配结果 ({filteredResults.length})</h2>
-        <button onClick={() => router.push("/auto-apply")}
-          className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors active:scale-95 flex items-center gap-1.5">
-          <Rocket className="w-3.5 h-3.5" />
-          一键批量投递
-        </button>
+        <div className="flex gap-2">
+          <button onClick={() => router.push(`/boss?resumeId=${resumeId}`)}
+            className="px-4 py-2 border border-green-500 text-green-600 rounded-lg text-sm font-medium hover:bg-green-50 transition-colors active:scale-95 flex items-center gap-1.5">
+            🤖 BOSS 直聘
+          </button>
+          <button onClick={() => router.push(`/auto-apply?resumeId=${resumeId}`)}
+            className="px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors active:scale-95 flex items-center gap-1.5">
+            <Rocket className="w-3.5 h-3.5" />
+            一键批量投递
+          </button>
+        </div>
       </div>
 
       {/* Results */}
@@ -266,7 +274,7 @@ export default function MatchPage() {
                           { label: "技能", value: result.skillMatch, color: "#22c55e" },
                           { label: "学历", value: result.educationMatch, color: "#3b82f6" },
                           { label: "经验", value: result.experienceMatch, color: "#f59e0b" },
-                          { label: "关键词", value: result.keywordMatch, color: "#8b5cf6" },
+                          { label: "覆盖度", value: result.requiredSkillCoverage, color: "#8b5cf6" },
                         ]}
                         size={200}
                       />
@@ -338,5 +346,13 @@ export default function MatchPage() {
         })}
       </div>
     </div>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-gray-400">加载中...</div>}>
+      <MatchPage />
+    </Suspense>
   )
 }

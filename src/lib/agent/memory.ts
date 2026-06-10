@@ -12,17 +12,17 @@ export async function saveSessionMemory(
   value: unknown
 ): Promise<void> {
   try {
-    // NOTE: read-modify-write on the JSON blob. Two concurrent writes to the
-    // same session can lose updates (last writer wins). Acceptable at current
-    // single-user concurrency; revisit with a row lock or per-key column if
-    // sessions are written concurrently.
-    const existing = await prisma.agentSession.findUnique({ where: { sessionId } })
-    const data = existing ? JSON.parse(existing.data || "{}") : {}
-    data[key] = value
-    await prisma.agentSession.upsert({
-      where: { sessionId },
-      create: { sessionId, data: JSON.stringify(data) },
-      update: { data: JSON.stringify(data), updatedAt: new Date() },
+    // Wrap in a transaction so SQLite's SERIALIZABLE isolation prevents
+    // lost updates when two concurrent writes touch the same session.
+    await prisma.$transaction(async (tx) => {
+      const existing = await tx.agentSession.findUnique({ where: { sessionId } })
+      const data = existing ? JSON.parse(existing.data || "{}") : {}
+      data[key] = value
+      await tx.agentSession.upsert({
+        where: { sessionId },
+        create: { sessionId, data: JSON.stringify(data) },
+        update: { data: JSON.stringify(data), updatedAt: new Date() },
+      })
     })
   } catch (err) {
     console.warn("Failed to save session memory:", err)
@@ -61,19 +61,13 @@ export async function saveUserPreference(
   value: unknown
 ): Promise<void> {
   try {
-    const existing = await prisma.userPreference.findUnique({
+    // Use upsert on the composite unique key to eliminate the read-modify-write
+    // race between findUnique and create/update.
+    await prisma.userPreference.upsert({
       where: { userId_key: { userId, key } },
+      create: { userId, key, value: JSON.stringify(value) },
+      update: { value: JSON.stringify(value), updatedAt: new Date() },
     })
-    if (existing) {
-      await prisma.userPreference.update({
-        where: { id: existing.id },
-        data: { value: JSON.stringify(value) },
-      })
-    } else {
-      await prisma.userPreference.create({
-        data: { userId, key, value: JSON.stringify(value) },
-      })
-    }
   } catch (err) {
     console.warn("Failed to save user preference:", err)
   }

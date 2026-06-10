@@ -28,6 +28,12 @@ export interface Project {
 
 export type ResumeSource = "ai" | "rule"
 
+export interface SkillGrade {
+  skill: string
+  /** core = 技能区明确列出, project = 项目 techStack 中出现, general = 正文提到 */
+  grade: "core" | "project" | "general"
+}
+
 export interface ParsedResume {
   name: string
   email: string
@@ -35,6 +41,7 @@ export interface ParsedResume {
   education: Education[]
   experience: Experience[]
   skills: string[]
+  skillGrades?: SkillGrade[]
   projects: Project[]
   rawText: string
   source?: ResumeSource
@@ -81,7 +88,7 @@ export interface MatchResult {
   skillMatch: number
   educationMatch: number
   experienceMatch: number
-  keywordMatch: number
+  requiredSkillCoverage: number
   matchedSkills: string[]
   missingSkills: string[]
   suggestions: string[]
@@ -168,4 +175,7 @@ export interface ApplyConfig {
   greeting: string
   minSalary?: number
   experience?: string
+  selectedJobs?: BossJob[]
+  delayMin?: number
+  delayMax?: number
 }

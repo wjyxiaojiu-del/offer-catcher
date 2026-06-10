@@ -3,6 +3,7 @@ import { CareerAgent } from "@/lib/agent/career-agent"
 import { prisma } from "@/lib/db"
 import { requireApiAccess } from "@/lib/api-guard"
 import { dbResumeToParsed } from "@/lib/resume-mapper"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 import type { ParsedResume } from "@/types"
 
 export async function POST(req: Request) {
@@ -38,8 +39,9 @@ export async function POST(req: Request) {
     } else if (resumeId) {
       thinking.push("📄 从数据库加载简历...")
       try {
-        const record = await prisma.resume.findUnique({
-          where: { id: resumeId },
+        const deviceId = getDeviceIdFromRequest(req)
+        const record = await prisma.resume.findFirst({
+          where: { id: resumeId, deviceId: deviceId || undefined },
           include: { educations: true, experiences: true, projects: true, skills: true },
         })
         if (record) {

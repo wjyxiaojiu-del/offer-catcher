@@ -1,16 +1,17 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useToast } from "@/components/ui/toast"
 import type { ParsedResume, AutoApplyResult } from "@/types"
 
-export default function AutoApplyPage() {
+function AutoApplyPage() {
   const [resume, setResume] = useState<ParsedResume | null>(null)
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<AutoApplyResult | null>(null)
   const [showResult, setShowResult] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
 
   // Config state
@@ -26,14 +27,17 @@ export default function AutoApplyPage() {
   const allCompanies = ["字节跳动", "阿里巴巴", "百度", "美团", "腾讯", "华为", "小米", "拼多多", "网易", "大疆", "快手", "Bilibili"]
 
   useEffect(() => {
-    const text = sessionStorage.getItem("resumeText")
-    if (!text) { router.push("/"); return }
+    const resumeId = searchParams.get("resumeId")
+    if (!resumeId) { router.push("/"); return }
 
-    fetch("/api/resume", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) })
+    fetch(`/api/resume?id=${resumeId}`)
       .then(r => r.json())
-      .then(data => setResume(data.resume))
+      .then(data => {
+        if (!data.resume) { router.push("/"); return }
+        setResume(data.resume)
+      })
       .catch(() => router.push("/"))
-  }, [router])
+  }, [router, searchParams])
 
   const toggleItem = (arr: string[], setArr: (v: string[]) => void, item: string) => {
     setArr(arr.includes(item) ? arr.filter(i => i !== item) : [...arr, item])
@@ -55,13 +59,6 @@ export default function AutoApplyPage() {
       const data = await res.json()
       setResult(data)
       setShowResult(true)
-
-      // Store applications in localStorage
-      if (data.applications?.length > 0) {
-        const stored = JSON.parse(localStorage.getItem("applications") || "[]")
-        const newApps = data.applications.map((a: any) => ({ ...a, method: "自动投递" }))
-        localStorage.setItem("applications", JSON.stringify([...newApps, ...stored]))
-      }
     } catch {
       toast("自动投递失败，请重试", "error")
     }
@@ -276,9 +273,17 @@ export default function AutoApplyPage() {
         </button>
 
         <p className="text-center text-xs text-gray-400">
-          注: 本系统为课程作业 Demo，投递为模拟操作，不会真正向企业投递简历
+          注: 系统将从岗位库中智能匹配并记录投递，实际简历投递请前往 BOSS 直聘页面
         </p>
       </div>
     </div>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-gray-400">加载中...</div>}>
+      <AutoApplyPage />
+    </Suspense>
   )
 }

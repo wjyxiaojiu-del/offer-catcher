@@ -1,30 +1,37 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { CountUp } from "@/components/count-up"
 import { RadarChart } from "@/components/radar-chart"
 import { useToast } from "@/components/ui/toast"
 import type { ParsedResume, ReportSection } from "@/types"
 
-export default function JDOptimizePage() {
+function JDOptimizePage() {
   const [resume, setResume] = useState<ParsedResume | null>(null)
   const [jdText, setJdText] = useState("")
   const [loading, setLoading] = useState(false)
   const [report, setReport] = useState<{ overall: string; overallScore: number; sections: ReportSection[] } | null>(null)
   const [parsedJob, setParsedJob] = useState<any>(null)
+  const [resumeId, setResumeId] = useState<string | null>(null)
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
 
   useEffect(() => {
-    const text = sessionStorage.getItem("resumeText")
-    if (!text) { router.push("/"); return }
+    const id = searchParams.get("resumeId")
+    if (!id) { router.push("/"); return }
 
-    fetch("/api/resume", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) })
+    setResumeId(id)
+
+    fetch(`/api/resume?id=${id}`)
       .then(r => r.json())
-      .then(data => setResume(data.resume))
+      .then(data => {
+        if (!data?.resume) { router.push("/"); return }
+        setResume(data.resume)
+      })
       .catch(() => router.push("/"))
-  }, [router])
+  }, [router, searchParams])
 
   const handleAnalyze = async () => {
     if (!resume || !jdText.trim()) return
@@ -187,7 +194,7 @@ export default function JDOptimizePage() {
               className="px-6 py-2.5 border rounded-xl text-sm font-medium hover:bg-gray-50 transition-colors">
               分析其他 JD
             </button>
-            <button onClick={() => router.push("/match")}
+            <button onClick={() => router.push(`/match?resumeId=${resumeId}`)}
               className="px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors">
               查看全量匹配
             </button>
@@ -195,5 +202,13 @@ export default function JDOptimizePage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-gray-400">加载中...</div>}>
+      <JDOptimizePage />
+    </Suspense>
   )
 }

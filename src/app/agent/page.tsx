@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
-import { Bot, Target, PenLine, Paperclip } from "lucide-react"
+import Link from "next/link"
+import { Bot, Target, PenLine, Paperclip, TrendingUp } from "lucide-react"
 import { useToast } from "@/components/ui/toast"
 import { renderMarkdown } from "@/lib/markdown"
 import { scoreColor } from "@/lib/ui-utils"
@@ -218,6 +219,15 @@ export default function AgentPage() {
               </button>
             </div>
           ))}
+        </div>
+        <div className="p-3 border-t">
+          <Link
+            href="/career"
+            className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <TrendingUp className="w-4 h-4" />
+            职业规划报告
+          </Link>
         </div>
       </aside>
 

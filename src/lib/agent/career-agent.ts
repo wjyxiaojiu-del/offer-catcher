@@ -4,7 +4,7 @@
 
 import type { AgentContext, AgentResponse } from "./types"
 import { runAgent } from "./orchestrator"
-import { getAllSessionMemory, getAllUserPreferences, getConversationHistory } from "./memory"
+import { getAllSessionMemory, getAllUserPreferences, getConversationHistory, saveSessionMemory } from "./memory"
 import { multiAgentParseResume } from "./resume-agents"
 import type { ParsedResume, MatchResult, OptimizationReport } from "@/types"
 
@@ -36,6 +36,15 @@ export class CareerAgent {
       this.ctx.memory.shortTerm = sessionMem
       this.ctx.memory.longTerm = userPref
       this.ctx.memory.shortTerm["_history"] = history
+
+      // 从 session memory 恢复简历
+      if (sessionMem.resume) {
+        this.ctx.resume = sessionMem.resume as ParsedResume
+      }
+      // 从 session memory 恢复匹配结果
+      if (sessionMem.lastMatches) {
+        this.ctx.memory.shortTerm["lastMatches"] = sessionMem.lastMatches
+      }
     } catch (err) {
       console.warn("CareerAgent init failed:", err)
       // Graceful: continue with empty memory
@@ -60,6 +69,8 @@ export class CareerAgent {
     try {
       const result = await multiAgentParseResume(text)
       this.ctx.resume = result.resume
+      // 持久化简历到 session memory
+      await saveSessionMemory(this.ctx.sessionId, "resume", result.resume)
       return result.resume
     } catch (err) {
       console.error("CareerAgent parseResume failed:", err)
@@ -67,6 +78,8 @@ export class CareerAgent {
       const { parseResume } = await import("@/lib/resume-parser")
       const fallback = parseResume(text)
       this.ctx.resume = fallback
+      // 持久化简历到 session memory
+      await saveSessionMemory(this.ctx.sessionId, "resume", fallback)
       return fallback
     }
   }
@@ -77,11 +90,14 @@ export class CareerAgent {
         throw new Error("请先解析简历")
       }
       const { matchResumeToJobs } = await import("@/lib/matcher")
-      const { jobs } = await import("@/data/jobs")
+      const { getAllJobs } = await import("@/lib/job-service")
 
-      let targetJobs = jobs
+      // 从数据库或内置数据获取岗位
+      let targetJobs = await getAllJobs()
+
+      // 按标签筛选
       if (filter?.tags && filter.tags.length > 0) {
-        targetJobs = jobs.filter((j) =>
+        targetJobs = targetJobs.filter((j) =>
           filter.tags!.some(
             (tag) => j.tags.includes(tag) || j.title.includes(tag) || j.description.includes(tag)
           )
@@ -89,6 +105,8 @@ export class CareerAgent {
       }
 
       const results = matchResumeToJobs(this.ctx.resume, targetJobs)
+      // 持久化匹配结果到 session memory
+      await saveSessionMemory(this.ctx.sessionId, "lastMatches", results.slice(0, 10))
       return filter?.topN ? results.slice(0, filter.topN) : results
     } catch (err) {
       console.error("CareerAgent matchJobs failed:", err)
@@ -102,7 +120,8 @@ export class CareerAgent {
         throw new Error("请先解析简历")
       }
       const { generateOptimizationReport } = await import("@/lib/matcher")
-      const { jobs } = await import("@/data/jobs")
+      const { getAllJobs } = await import("@/lib/job-service")
+      const jobs = await getAllJobs()
       const job = jobs.find((j) => j.id === jobId)
       if (!job) {
         throw new Error(`未找到岗位: ${jobId}`)

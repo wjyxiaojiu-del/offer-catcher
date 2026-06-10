@@ -4,7 +4,7 @@
 
 import type { ParsedIntent, AgentContext, Task } from "./types"
 import { PLANNER_SYSTEM_PROMPT } from "./prompts"
-import { callLLM } from "@/lib/ai"
+import { callLLM, sanitizeJSON, extractJSON } from "@/lib/ai"
 import { withTimeout } from "@/lib/utils"
 
 interface LLMTaskPlan {
@@ -34,12 +34,8 @@ ${lastIntent ? `上一轮意图: ${lastIntent}` : ""}
 }
 
 function sanitizePlannerJSON(text: string): string {
-  let s = text.trim()
-  // Remove markdown fences
-  s = s.replace(/^```json\s*/, "").replace(/^```/, "").replace(/```$/, "").trim()
-  // Extract JSON object
-  const match = s.match(/\{[\s\S]*\}/)
-  return match ? match[0] : s
+  // Reuse the more robust JSON extraction and sanitization from ai.ts
+  return sanitizeJSON(extractJSON(text))
 }
 
 export async function planTasksByLLM(
@@ -71,19 +67,24 @@ export async function planTasksByLLM(
       dependencies: t.dependencies || [],
     }))
 
-    // Validate agent names against known types
+    // Validate agent names against known types (must match tools.ts registry keys)
     const validAgents = new Set([
-      "resumeParser",
-      "matcher",
-      "analyzer",
+      "parseResumeText",
+      "matchJobs",
+      "generateOptimizationReport",
+      "searchJobs",
+      "getJobDetail",
+      "saveMemory",
+      "recallMemory",
+      "analyzeTopMatches",
+      "summarizeMatches",
       "advisor",
-      "applier",
-      "synthesizer",
+      "simulateApply",
     ])
     for (const t of tasks) {
       if (!validAgents.has(t.agent)) {
-        console.warn("LLM planner returned unknown agent:", t.agent, "-> mapping to synthesizer")
-        t.agent = "synthesizer"
+        console.warn("LLM planner returned unknown agent:", t.agent, "-> mapping to summarizeMatches")
+        t.agent = "summarizeMatches"
       }
     }
 

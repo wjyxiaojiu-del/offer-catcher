@@ -9,6 +9,8 @@ import { withTimeout } from "@/lib/utils"
 import { aiRecognizeIntent } from "@/lib/ai"
 import { planTasksByLLM } from "./llm-planner"
 import { generateResponseByLLM } from "./llm-responder"
+import { REACT_SYSTEM_PROMPT } from "./prompts"
+import { callLLM, sanitizeJSON, extractJSON } from "@/lib/ai"
 import { jobs } from "@/data/jobs"
 
 // ========== Intent Recognition ==========
@@ -17,33 +19,46 @@ function recognizeIntentByRules(userInput: string, ctx: AgentContext): ParsedInt
   const lower = userInput.toLowerCase()
 
   // Fast rule-based intent detection (no LLM call for common patterns)
-  if (/匹配|推荐|找.*工作|适合.*岗位|帮我找/.test(lower)) {
+  // 匹配岗位 - 覆盖更多口语化表达
+  if (/匹配|推荐|找.*工作|适合.*岗位|帮我找|有没有合适的|看看岗位|能做什么工作|我想找工作|岗位推荐|有.*岗位|什么.*工作/.test(lower)) {
     const tags: string[] = []
-    if (/前端|react|vue|css|html/.test(lower)) tags.push("前端")
-    if (/后端|java|go|python|node/.test(lower)) tags.push("后端")
-    if (/ai|算法|大模型|nlp|cv|机器学习/.test(lower)) tags.push("AI")
-    if (/产品|pm|原型|需求/.test(lower)) tags.push("产品")
-    if (/数据|分析|sql|可视化/.test(lower)) tags.push("数据")
+    // 扩充标签词表，与 jobs.ts 中的 tags 对齐
+    if (/前端|react|vue|css|html|angular|svelte|nextjs|nuxt/.test(lower)) tags.push("前端")
+    if (/后端|java|go|python|node|spring|django|flask|express|nestjs/.test(lower)) tags.push("后端")
+    if (/ai|算法|大模型|nlp|cv|机器学习|深度学习|人工智能|llm|gpt/.test(lower)) tags.push("AI")
+    if (/产品|pm|原型|需求|产品经理/.test(lower)) tags.push("产品")
+    if (/数据|分析|sql|可视化|数据分析师|bi|etl/.test(lower)) tags.push("数据")
+    if (/测试|qa|自动化测试|性能测试|测试工程师/.test(lower)) tags.push("测试")
+    if (/运维|devops|sre|k8s|docker|部署/.test(lower)) tags.push("运维")
+    if (/安全|网安|渗透|安全工程师/.test(lower)) tags.push("安全")
+    if (/移动端|ios|android|flutter|react native|小程序/.test(lower)) tags.push("移动端")
+    if (/全栈|fullstack|full-stack/.test(lower)) tags.push("全栈")
+    if (/设计|ui|ux|交互|设计师/.test(lower)) tags.push("设计")
     return { intent: "match_jobs", params: { tags, query: userInput }, confidence: 0.9 }
   }
 
-  if (/优化|修改|改进|怎么改|建议/.test(lower)) {
+  // 优化简历 - 覆盖更多表达
+  if (/优化|修改|改进|怎么改|建议|简历怎么写|简历帮我看看|简历有问题|怎么提升|简历.*改|改.*简历|看看.*简历/.test(lower)) {
     return { intent: "optimize_resume", params: { query: userInput }, confidence: 0.85 }
   }
 
-  if (/解析|提取|识别|上传.*简历/.test(lower)) {
+  // 解析简历 - 覆盖更多表达
+  if (/解析|提取|识别|上传.*简历|这是我的简历|帮我看看简历|简历分析|分析.*简历|简历.*解析/.test(lower)) {
     return { intent: "parse_resume", params: { query: userInput }, confidence: 0.9 }
   }
 
-  if (/投递|申请|发送|一键投递/.test(lower)) {
+  // 投递岗位 - 覆盖更多表达
+  if (/投递|申请|发送|一键投递|我要投|申请这个|帮我发|投.*岗位|申请.*岗位/.test(lower)) {
     return { intent: "apply_jobs", params: { query: userInput }, confidence: 0.85 }
   }
 
-  if (/面试|准备|题库|面经|会问什么|结束面试/.test(lower)) {
+  // 模拟面试 - 覆盖更多表达
+  if (/面试|准备|题库|面经|会问什么|结束面试|模拟面试|面试练习|考考我|面试题|面试.*准备|准备.*面试/.test(lower)) {
     return { intent: "mock_interview", params: { query: userInput }, confidence: 0.8 }
   }
 
-  if (/职业|规划|发展|转行|方向/.test(lower)) {
+  // 职业规划 - 覆盖更多表达
+  if (/职业|规划|发展|转行|方向|前景|出路|未来怎么走|能往哪发展|职业.*建议| career/.test(lower)) {
     return { intent: "career_advice", params: { query: userInput }, confidence: 0.8 }
   }
 
@@ -232,6 +247,169 @@ async function executeAgentTask(
   return tool.execute(task.params || {})
 }
 
+// ========== ReAct Loop ==========
+
+const MAX_REACT_ITERATIONS = 3
+
+interface ReActOutput {
+  thought: string
+  action: { tool: string; params: Record<string, unknown> }
+  finish: boolean
+}
+
+function buildReActUserPrompt(
+  intent: ParsedIntent,
+  ctx: AgentContext,
+  steps: ReActStep[],
+  availableTools: string[]
+): string {
+  const hasResume = !!ctx.resume
+  const prevObservations = steps.length > 0
+    ? steps.map((s, i) =>
+        `Step ${i + 1}:\nThought: ${s.thought}\nAction: ${s.action?.tool || "none"}\nObservation: ${s.observation || "none"}`
+      ).join("\n\n")
+    : "（尚无执行步骤）"
+
+  return `用户意图: ${intent.intent}
+用户输入: ${intent.params.query || ""}
+是否已解析简历: ${hasResume ? "是" : "否"}
+${hasResume ? `简历姓名: ${ctx.resume!.name}, 技能: ${ctx.resume!.skills.slice(0, 5).join(", ")}` : ""}
+
+可用工具: ${availableTools.join(", ")}
+
+历史执行记录:
+${prevObservations}
+
+请决定下一步行动（输出 JSON）。`
+}
+
+export function parseReActResponse(text: string): ReActOutput | null {
+  try {
+    const json = JSON.parse(sanitizeJSON(extractJSON(text)))
+    if (!json.thought || !json.action || !json.action.tool) {
+      return null
+    }
+    return {
+      thought: String(json.thought),
+      action: {
+        tool: String(json.action.tool),
+        params: (json.action.params as Record<string, unknown>) || {},
+      },
+      finish: Boolean(json.finish) || json.action.tool === "finish",
+    }
+  } catch {
+    return null
+  }
+}
+
+async function executeReActAction(
+  action: ReActOutput["action"],
+  ctx: AgentContext,
+  registry: Record<string, import("./types").Tool>
+): Promise<{ result: unknown; error?: string; durationMs: number }> {
+  const tool = registry[action.tool]
+  if (!tool) {
+    return { result: null, error: `未知工具: ${action.tool}`, durationMs: 0 }
+  }
+
+  const start = Date.now()
+  try {
+    const result = await tool.execute(action.params)
+    return { result, durationMs: Date.now() - start }
+  } catch (err: any) {
+    return { result: null, error: err.message || String(err), durationMs: Date.now() - start }
+  }
+}
+
+/**
+ * Run ReAct loop: iterative thought → action → observation.
+ * Falls back silently if LLM fails to produce valid actions.
+ */
+async function runReActLoop(
+  intent: ParsedIntent,
+  ctx: AgentContext,
+  maxIterations = MAX_REACT_ITERATIONS
+): Promise<{ steps: ReActStep[]; completed: Task[]; failed: Task[] }> {
+  const registry = createToolRegistry(ctx)
+  const availableTools = Object.keys(registry).concat("finish")
+  const steps: ReActStep[] = []
+  const completed: Task[] = []
+  const failed: Task[] = []
+
+  for (let i = 0; i < maxIterations; i++) {
+    const userPrompt = buildReActUserPrompt(intent, ctx, steps, availableTools)
+
+    let output: ReActOutput | null = null
+    try {
+      const llmText = await withTimeout(
+        callLLM(REACT_SYSTEM_PROMPT, userPrompt),
+        5000,
+        null,
+        { silent: true }
+      )
+      if (llmText) {
+        output = parseReActResponse(llmText)
+      }
+    } catch {
+      // LLM call failed, break to fallback
+      break
+    }
+
+    if (!output) {
+      break
+    }
+
+    if (output.finish || output.action.tool === "finish") {
+      steps.push({ step: i + 1, thought: output.thought })
+      break
+    }
+
+    // Execute action
+    const execResult = await executeReActAction(output.action, ctx, registry)
+
+    // Record tool call
+    const toolCall: ToolCall = {
+      tool: output.action.tool,
+      params: output.action.params,
+      result: execResult.result,
+      error: execResult.error,
+      durationMs: execResult.durationMs,
+    }
+    ctx.toolCalls.push(toolCall)
+
+    steps.push({
+      step: i + 1,
+      thought: output.thought,
+      action: toolCall,
+      observation: execResult.error
+        ? `执行失败: ${execResult.error}`
+        : `执行成功: ${JSON.stringify(execResult.result).slice(0, 300)}`,
+    })
+
+    // Convert to Task for backward compatibility
+    const task: Task = {
+      id: `react-${i + 1}`,
+      name: output.action.tool,
+      description: output.thought,
+      status: execResult.error ? "failed" : "completed",
+      agent: output.action.tool,
+      dependencies: [],
+      params: output.action.params,
+      result: execResult.result,
+      error: execResult.error,
+      startTime: Date.now() - execResult.durationMs,
+      endTime: Date.now(),
+    }
+    if (execResult.error) {
+      failed.push(task)
+    } else {
+      completed.push(task)
+    }
+  }
+
+  return { steps, completed, failed }
+}
+
 // ========== Main Orchestrator Entry ==========
 
 export async function runAgent(
@@ -251,34 +429,59 @@ export async function runAgent(
   const history = await getConversationHistory(ctx.sessionId, 5)
   ctx.memory.shortTerm["last_intent"] = intent.intent
 
-  // Step 3: Plan tasks (LLM-first with rule fallback)
+  // Step 3: Execute via ReAct loop (LLM) or fixed DAG (rules)
   const useLLM = process.env.DISABLE_LLM_PLANNER !== "true"
-  let tasks: Task[] = []
+  let completed: Task[] = []
+  let failed: Task[] = []
+  let reactSteps: ReActStep[] = []
 
   if (useLLM) {
-    thinking.push("📋 LLM 正在规划任务...")
-    const llmTasks = await planTasksByLLM(intent, ctx)
-    if (llmTasks && llmTasks.length > 0) {
-      tasks = llmTasks
-      thinking.push("✅ LLM 规划完成")
+    thinking.push("🔄 ReAct 循环启动...")
+    const reactResult = await runReActLoop(intent, ctx)
+    if (reactResult.steps.length > 0) {
+      reactSteps = reactResult.steps
+      completed = reactResult.completed
+      failed = reactResult.failed
+      for (const s of reactSteps) {
+        thinking.push(`Step ${s.step}: 💭 ${s.thought}`)
+        if (s.action) {
+          thinking.push(`  → 🔧 ${s.action.tool} ${s.action.error ? "❌" : "✅"}`)
+        }
+        if (s.observation) {
+          thinking.push(`  ← 📊 ${s.observation.slice(0, 120)}`)
+        }
+      }
+      if (reactSteps[reactSteps.length - 1]?.action?.tool !== "finish") {
+        thinking.push("⏹️ ReAct 达到最大迭代次数")
+      }
     } else {
-      thinking.push("⚠️ LLM 规划失败，回退到规则引擎")
+      thinking.push("⚠️ ReAct 循环未产生有效步骤，回退到固定 DAG")
     }
   }
 
-  if (tasks.length === 0) {
-    thinking.push("📋 规则引擎分解任务...")
-    tasks = planTasksByRules(intent, ctx)
+  // Fallback to fixed DAG if ReAct produced nothing
+  if (completed.length === 0 && failed.length === 0) {
+    let tasks: Task[] = []
+    if (useLLM) {
+      const llmTasks = await planTasksByLLM(intent, ctx)
+      if (llmTasks && llmTasks.length > 0) {
+        tasks = llmTasks
+        thinking.push("✅ LLM 规划完成")
+      }
+    }
+    if (tasks.length === 0) {
+      thinking.push("📋 规则引擎分解任务...")
+      tasks = planTasksByRules(intent, ctx)
+    }
+    ctx.tasks = tasks
+    for (const t of tasks) {
+      thinking.push(`  • [${t.agent}] ${t.name}`)
+    }
+    thinking.push("🚀 正在执行...")
+    const result = await executeTasks(tasks, ctx)
+    completed = result.completed
+    failed = result.failed
   }
-
-  ctx.tasks = tasks
-  for (const t of tasks) {
-    thinking.push(`  • [${t.agent}] ${t.name}`)
-  }
-
-  // Step 4: Execute
-  thinking.push("🚀 正在执行...")
-  const { completed, failed } = await executeTasks(tasks, ctx)
 
   if (failed.length > 0) {
     thinking.push(`⚠️ ${failed.length} 个任务失败: ${failed.map(f => f.name).join(", ")}`)
@@ -313,6 +516,7 @@ export async function runAgent(
     tasks: [...completed, ...failed],
     toolCalls: ctx.toolCalls,
     thinking,
+    reactSteps: reactSteps.length > 0 ? reactSteps : undefined,
   }
 }
 
@@ -329,6 +533,11 @@ function generateResponseByRules(
 
   switch (intent.intent) {
     case "match_jobs": {
+      // 检查是否有解析简历失败的情况
+      const parseTask = failed.find(t => t.id === "parse")
+      if (parseTask) {
+        return "📄 **请先上传简历**\n\n我需要先了解你的技能和经历，才能为你匹配合适的岗位。\n\n你可以：\n1. 直接粘贴简历文本\n2. 上传 PDF/DOCX 简历文件\n\n上传后我会自动为你匹配岗位！"
+      }
       if (!matches || matches.length === 0) return "抱歉，没有找到匹配的岗位。请尝试上传简历或调整搜索条件。"
       const top = matches.slice(0, 5)
       let text = `为你找到 ${matches.length} 个匹配岗位，Top 5 如下：\n\n`

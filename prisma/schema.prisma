@@ -32,6 +32,7 @@ model Resume {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   userId    String?
+  deviceId  String?
 
   user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   educations   Education[]
@@ -39,6 +40,8 @@ model Resume {
   projects     Project[]
   skills       ResumeSkill[]
   applications Application[]
+
+  @@index([deviceId])
 }
 
 model Education {
@@ -117,6 +120,7 @@ model Job {
 model Application {
   id           String   @id @default(cuid())
   userId       String?
+  deviceId     String?
   resumeId     String?
   jobId        String?
   jobSnapshot  String?  @default("{}")
@@ -138,6 +142,7 @@ model Application {
   @@index([appliedAt])
   @@index([resumeId])
   @@index([jobId])
+  @@index([deviceId])
 }
 
 model ApplicationStatusHistory {
@@ -156,6 +161,7 @@ model ApplicationStatusHistory {
 model AgentSession {
   id        String   @id @default(cuid())
   userId    String?
+  deviceId  String?
   sessionId String   @unique
   data      String   @default("{}")
   createdAt DateTime @default(now())
@@ -163,6 +169,8 @@ model AgentSession {
 
   user     User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages AgentMessage[]
+
+  @@index([deviceId])
 }
 
 model AgentMessage {
@@ -192,4 +200,88 @@ model UserPreference {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, key])
+}
+
+// ========== Interview / 面试刷题模型 ==========
+
+model InterviewQuestion {
+  id         String   @id
+  module     String
+  difficulty Int      // 1=初级, 2=中级, 3=高级
+  question   String
+  answer     String
+  tags       String   @default("[]")  // JSON array of strings
+  source     String?  // "builtin" | "custom_<importId>"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  studyRecords InterviewStudyRecord[]
+  notes        InterviewNote[]
+  flags        InterviewFlag[]
+
+  @@index([module])
+  @@index([difficulty])
+  @@index([source])
+}
+
+model InterviewStudyRecord {
+  id          String   @id @default(cuid())
+  deviceId    String   @default("legacy")
+  questionId  String
+  status      String   @default("unlearned")  // unlearned|mastered|review
+  lastUpdated DateTime @default(now())
+  reviewCount Int      @default(0)
+
+  question InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, questionId])
+  @@index([deviceId])
+}
+
+model InterviewNote {
+  id         String   @id @default(cuid())
+  deviceId   String   @default("legacy")
+  questionId String
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  question InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, questionId])
+  @@index([deviceId])
+}
+
+model InterviewFlag {
+  id         String   @id @default(cuid())
+  deviceId   String   @default("legacy")
+  questionId String
+  starred    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  question InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([deviceId, questionId])
+  @@index([deviceId])
+}
+
+model MockInterview {
+  id         String   @id @default(cuid())
+  deviceId   String?
+  status     String   @default("planning")  // planning|interviewing|completed
+  plan       String?  // JSON: {summary, focusAreas, sections, openingQuestion}
+  turns      String   @default("[]")  // JSON array of {role, content, timestamp}
+  report     String?  // Markdown 复盘报告
+  score      Float?
+  jobTitle   String?
+  jobLevel   String?
+  jdText     String?
+  resumeText String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([deviceId])
 }

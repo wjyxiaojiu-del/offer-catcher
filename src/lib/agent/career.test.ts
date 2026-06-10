@@ -8,6 +8,7 @@ function makeResume(overrides: Partial<ParsedResume> = {}): ParsedResume {
     email: "test@example.com",
     phone: "13800138000",
     skills: [],
+    skillGrades: [],
     education: [],
     experience: [],
     projects: [],

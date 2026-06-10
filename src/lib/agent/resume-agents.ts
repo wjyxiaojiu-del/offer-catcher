@@ -4,7 +4,7 @@
 // Phase 2: Orchestrates 5 specialist agents + 1 validator agent
 // to collaboratively parse a resume with high accuracy.
 
-import type { ParsedResume, Education, Experience, Project } from "@/types"
+import type { ParsedResume, Education, Experience, Project, SkillGrade } from "@/types"
 import {
   parseResume,
   extractSkills,
@@ -112,23 +112,31 @@ export async function infoExtractionAgent(
 export async function skillExtractionAgent(
   text: string,
   getAI: AIResumeProvider = defaultAIProvider(text)
-): Promise<string[]> {
-  const skills = extractSkills(text)
+): Promise<{ skills: string[]; skillGrades: SkillGrade[] }> {
+  const { skills, skillGrades } = extractSkills(text)
 
   if (!isLowConfidenceSkills(skills)) {
-    return skills
+    return { skills, skillGrades }
   }
 
   // Fallback to LLM (shared/memoized across agents)
   try {
     const aiResult = await getAI()
     if (aiResult.skills?.length) {
-      return Array.from(new Set([...skills, ...aiResult.skills]))
+      const merged = Array.from(new Set([...skills, ...aiResult.skills]))
+      // AI-extracted skills get "general" grade if not already graded
+      const mergedGrades = [...skillGrades]
+      for (const s of aiResult.skills) {
+        if (!mergedGrades.some(sg => sg.skill.toLowerCase() === s.toLowerCase())) {
+          mergedGrades.push({ skill: s, grade: "general" })
+        }
+      }
+      return { skills: merged, skillGrades: mergedGrades }
     }
   } catch {
     // ignore
   }
-  return skills
+  return { skills, skillGrades }
 }
 
 // ------------------------------------------------------------------
@@ -267,6 +275,7 @@ export async function validatorAgent(parts: Partial<ParsedResume>): Promise<Pars
     email = "",
     phone = "",
     skills = [],
+    skillGrades = [],
     education = [],
     experience = [],
     projects = [],
@@ -351,6 +360,7 @@ export async function validatorAgent(parts: Partial<ParsedResume>): Promise<Pars
     email: finalEmail,
     phone: finalPhone,
     skills: dedupedSkills,
+    skillGrades: skillGrades,
     education: dedupedEducation,
     experience: dedupedExperience,
     projects: dedupedProjects,
@@ -405,7 +415,7 @@ export async function multiAgentParseResume(text: string): Promise<MultiAgentPar
     }
   }
 
-  const [info, skills, education, experience, projects] = await Promise.all([
+  const [info, skillResult, education, experience, projects] = await Promise.all([
     runAgent("infoExtractionAgent", () => infoExtractionAgent(text, sharedGetAI)),
     runAgent("skillExtractionAgent", () => skillExtractionAgent(text, sharedGetAI)),
     runAgent("educationAgent", () => educationAgent(text, sharedGetAI)),
@@ -419,7 +429,8 @@ export async function multiAgentParseResume(text: string): Promise<MultiAgentPar
     name: info.name,
     email: info.email,
     phone: info.phone,
-    skills,
+    skills: skillResult.skills,
+    skillGrades: skillResult.skillGrades,
     education,
     experience,
     projects,

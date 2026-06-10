@@ -60,6 +60,7 @@ export interface AgentResponse {
   tasks: Task[]
   toolCalls: ToolCall[]
   thinking?: string[]
+  reactSteps?: ReActStep[]
 }
 
 export interface ReActStep {

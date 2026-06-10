@@ -3,7 +3,8 @@ import { matchResumeToJobs, generateOptimizationReport } from "@/lib/matcher"
 import { withTimeout } from "@/lib/utils"
 import { requireApiAccess } from "@/lib/api-guard"
 import { dbResumeToParsed } from "@/lib/resume-mapper"
-import { jobs } from "@/data/jobs"
+import { getAllJobs } from "@/lib/job-service"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 import type { ParsedResume } from "@/types"
 
 export async function POST(req: Request) {
@@ -12,14 +13,15 @@ export async function POST(req: Request) {
 
   try {
     const { resume, resumeId, jobId }: { resume?: ParsedResume; resumeId?: string; jobId?: string } = await req.json()
+    const deviceId = getDeviceIdFromRequest(req)
 
     // Load resume from DB if resumeId provided
     let resolvedResume: ParsedResume
     if (resumeId) {
       try {
         const { prisma } = await import("@/lib/db")
-        const record = await prisma.resume.findUnique({
-          where: { id: resumeId },
+        const record = await prisma.resume.findFirst({
+          where: { id: resumeId, deviceId: deviceId || undefined },
           include: { educations: true, experiences: true, projects: true, skills: true },
         })
         if (record) {
@@ -38,16 +40,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "No resume data" }, { status: 400 })
     }
 
+    // 从数据库获取岗位
+    const allJobs = await getAllJobs()
+
     // If jobId is provided, generate optimization report for that specific job
     if (jobId) {
-      const job = jobs.find((j) => j.id === jobId)
+      const job = allJobs.find((j) => j.id === jobId)
       if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 })
       const report = generateOptimizationReport(resolvedResume, job)
       return NextResponse.json({ report, job })
     }
 
     // Rule-based matching first (fast, always works, < 50ms)
-    const results = matchResumeToJobs(resolvedResume, jobs)
+    const results = matchResumeToJobs(resolvedResume, allJobs)
 
     // ========== FIX: Reduce LLM concurrency ==========
     // Old: Promise.allSettled on top 5 = 5 concurrent LLM calls (very slow, easy to hit rate limits)
@@ -94,8 +99,8 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ results })
-  } catch (error) {
-    console.error("Match error:", error)
-    return NextResponse.json({ error: "Failed to match" }, { status: 500 })
+  } catch (error: any) {
+    console.error("Match error:", error.message, error.stack)
+    return NextResponse.json({ error: "Failed to match", details: error.message }, { status: 500 })
   }
 }

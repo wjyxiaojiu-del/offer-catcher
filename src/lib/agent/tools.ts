@@ -7,12 +7,17 @@ import { parseResume } from "@/lib/resume-parser"
 import { matchResumeToJobs, generateOptimizationReport } from "@/lib/matcher"
 import { aiAnalyzeMatch, callLLM } from "@/lib/ai"
 import { withTimeout } from "@/lib/utils"
-import { jobs } from "@/data/jobs"
+import { getAllJobs, searchJobs as searchJobsService } from "@/lib/job-service"
 import { saveSessionMemory, getSessionMemory, saveUserPreference, getUserPreference } from "./memory"
 import { detectInterviewType, buildInterviewPrompt, buildFollowUpPrompt, buildInterviewSummary } from "./interview"
 import { buildCareerPrompt, buildGapAnalysisPrompt, buildRoadmapPrompt } from "./career"
 
 export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
+  const findJobById = async (jobId: unknown) => {
+    const allJobs = await getAllJobs()
+    return allJobs.find((j) => j.id === String(jobId))
+  }
+
   return {
     // ======== Resume Tools ========
     parseResumeText: {
@@ -49,16 +54,25 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
       },
       execute: async ({ filterTags, topN }) => {
         if (!ctx.resume) throw new Error("请先解析简历")
-        let targetJobs = jobs
+
+        // 从数据库或内置数据获取岗位
+        let targetJobs = await getAllJobs()
+
+        // 按标签筛选
         if (Array.isArray(filterTags) && filterTags.length > 0) {
-          targetJobs = jobs.filter(j =>
+          targetJobs = targetJobs.filter(j =>
             filterTags.some((tag: string) =>
               j.tags.includes(tag) || j.title.includes(tag) || j.description.includes(tag)
             )
           )
         }
+
         const results = matchResumeToJobs(ctx.resume, targetJobs)
         const sliced = typeof topN === "number" ? results.slice(0, topN) : results
+
+        // 保存匹配结果到 session memory
+        await saveSessionMemory(ctx.sessionId, "lastMatches", sliced.slice(0, 10))
+
         return sliced.map(r => ({
           jobId: r.job.id,
           title: r.job.title,
@@ -82,7 +96,7 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
       },
       execute: async ({ jobId }) => {
         if (!ctx.resume) throw new Error("请先解析简历")
-        const job = jobs.find(j => j.id === jobId)
+        const job = await findJobById(jobId)
         if (!job) throw new Error(`未找到岗位: ${jobId}`)
         const report = generateOptimizationReport(ctx.resume, job)
         return report
@@ -98,17 +112,9 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
         limit: { type: "number", description: "返回数量上限", required: false },
       },
       execute: async ({ keyword, limit }) => {
-        const kw = String(keyword).toLowerCase()
-        const matched = jobs
-          .filter(j =>
-            j.title.toLowerCase().includes(kw) ||
-            j.company.toLowerCase().includes(kw) ||
-            j.tags.some(t => t.toLowerCase().includes(kw)) ||
-            j.skills.some(s => s.toLowerCase().includes(kw)) ||
-            j.description.toLowerCase().includes(kw)
-          )
-          .slice(0, typeof limit === "number" ? limit : 10)
-        return matched.map(j => ({
+        const matched = await searchJobsService(String(keyword))
+        const sliced = typeof limit === "number" ? matched.slice(0, limit) : matched.slice(0, 10)
+        return sliced.map(j => ({
           jobId: j.id,
           title: j.title,
           company: j.company,
@@ -127,7 +133,7 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
         jobId: { type: "string", description: "岗位ID", required: true },
       },
       execute: async ({ jobId }) => {
-        const job = jobs.find(j => j.id === jobId)
+        const job = await findJobById(jobId)
         if (!job) throw new Error(`未找到岗位: ${jobId}`)
         return job
       },
@@ -186,8 +192,9 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
         const limit = typeof topN === "number" ? topN : 3
         const targets = matchResults.slice(0, limit)
         const analyses = []
+        const allJobs = await getAllJobs()
         for (const m of targets) {
-          const job = jobs.find(j => j.id === m.jobId)
+          const job = allJobs.find((j) => j.id === m.jobId)
           if (!job) continue
           const ai = await withTimeout(
             aiAnalyzeMatch(ctx.resume!, {
@@ -236,7 +243,7 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
           const topMatch = results?.[0]
           const targetJobId = (jobId as string) || topMatch?.jobId
           if (!targetJobId) throw new Error("未找到目标岗位")
-          const job = jobs.find(j => j.id === targetJobId)
+          const job = await findJobById(targetJobId)
           if (!job) throw new Error(`未找到岗位: ${targetJobId}`)
           return generateOptimizationReport(ctx.resume, job)
         }
@@ -244,7 +251,7 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
         if (type === "interview") {
           if (!ctx.resume) throw new Error("请先解析简历")
           const targetJobId = jobId as string
-          const job = targetJobId ? jobs.find(j => j.id === targetJobId) : undefined
+          const job = targetJobId ? await findJobById(targetJobId) : undefined
           const interviewType = job ? detectInterviewType(job) : "mixed"
 
           // Check if there's existing interview history in memory
@@ -283,7 +290,7 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
         if (type === "career") {
           if (!ctx.resume) throw new Error("请先解析简历")
           const targetJobId = jobId as string
-          const job = targetJobId ? jobs.find(j => j.id === targetJobId) : undefined
+          const job = targetJobId ? await findJobById(targetJobId) : undefined
 
           // Generate career advice
           const { systemPrompt, userPrompt } = buildCareerPrompt(ctx.resume, job)
@@ -324,7 +331,7 @@ export function createToolRegistry(ctx: AgentContext): Record<string, Tool> {
         jobId: { type: "string", description: "岗位ID", required: true },
       },
       execute: async ({ jobId }) => {
-        const job = jobs.find(j => j.id === jobId)
+        const job = await findJobById(jobId)
         if (!job) throw new Error(`未找到岗位: ${jobId}`)
         // Simulated apply — in real world this would call an external API
         return {

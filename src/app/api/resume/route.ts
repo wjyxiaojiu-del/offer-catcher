@@ -2,8 +2,9 @@ import { NextResponse } from "next/server"
 import { parseResume } from "@/lib/resume-parser"
 import { withTimeout, sanitizeText } from "@/lib/utils"
 import { apiError } from "@/lib/api-response"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 import { requireApiAccess } from "@/lib/api-guard"
-import { extractTextFromFile, MAX_FILE_SIZE, FileTooLargeError, UnsupportedFileError } from "@/lib/file-extract"
+import { extractTextFromFile, MAX_FILE_SIZE, FileTooLargeError, UnsupportedFileError, ParseError } from "@/lib/file-extract"
 import { buildResumeWriteData, dbResumeToParsed } from "@/lib/resume-mapper"
 import type { ParsedResume } from "@/types"
 
@@ -50,6 +51,7 @@ function mergeResumes(rule: ParsedResume, ai: Partial<ParsedResume> | null): Par
         }))
       : rule.projects,
     rawText: rule.rawText,
+    skillGrades: rule.skillGrades,
     source: "ai",
     summary: ai.summary || rule.summary,
   }
@@ -103,25 +105,35 @@ export async function POST(req: Request) {
     const parseTime = Date.now() - startTime
     console.log(`Resume parsed in ${parseTime}ms (source: ${resume.source})`)
 
-    // Persist to DB (non-blocking, graceful fallback)
+    // Persist to DB
     let resumeId: string | undefined
     try {
       const { prisma } = await import("@/lib/db")
+      const deviceId = getDeviceIdFromRequest(req)
       const saved = await prisma.resume.create({
-        data: buildResumeWriteData(resume),
+        data: { ...buildResumeWriteData(resume), deviceId: deviceId || undefined },
       })
       resumeId = saved.id
     } catch (dbErr) {
-      console.warn("DB save failed, continuing without persistence:", dbErr)
+      console.error("DB save failed:", dbErr)
+      return NextResponse.json({
+        resume,
+        resumeId: undefined,
+        dbSaved: false,
+        warning: "简历解析成功但未持久化到数据库"
+      })
     }
 
-    return NextResponse.json({ resume, resumeId })
+    return NextResponse.json({ resume, resumeId, dbSaved: true })
   } catch (error: any) {
     if (error instanceof FileTooLargeError) {
       return apiError(error.message, "FILE_TOO_LARGE", 413)
     }
     if (error instanceof UnsupportedFileError) {
       return apiError(error.message, "UNSUPPORTED_FILE", 415)
+    }
+    if (error instanceof ParseError) {
+      return apiError(error.message, "PARSE_ERROR", 422)
     }
     console.error("Resume parse error:", error)
     return apiError(
@@ -144,9 +156,10 @@ export async function GET(req: Request) {
   }
 
   try {
+    const deviceId = getDeviceIdFromRequest(req)
     const { prisma } = await import("@/lib/db")
-    const dbResume = await prisma.resume.findUnique({
-      where: { id },
+    const dbResume = await prisma.resume.findFirst({
+      where: { id, deviceId: deviceId || undefined },
       include: { educations: true, experiences: true, projects: true, skills: true },
     })
     if (!dbResume) {
@@ -178,12 +191,13 @@ export async function PUT(req: Request) {
 
     const data = buildResumeWriteData(resume, { forUpdate: true })
 
+    const deviceId = getDeviceIdFromRequest(req)
     let resultId: string
     if (id) {
-      await prisma.resume.update({ where: { id }, data })
+      await prisma.resume.updateMany({ where: { id, deviceId: deviceId || undefined }, data })
       resultId = id
     } else {
-      const created = await prisma.resume.create({ data })
+      const created = await prisma.resume.create({ data: { ...data, deviceId } })
       resultId = created.id
     }
 

@@ -2,13 +2,14 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Target, Bot, Briefcase, Rocket, FileText, Inbox } from "lucide-react"
+import { Target, Bot, Briefcase, Rocket, FileText, Inbox, GraduationCap } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 export const NAV_ITEMS = [
   { href: "/", label: "首页", icon: Target },
   { href: "/agent", label: "求职 Agent", icon: Bot },
   { href: "/match", label: "岗位匹配", icon: Briefcase },
+  { href: "/interview", label: "面试刷题", icon: GraduationCap },
   { href: "/jd-optimize", label: "JD 优化", icon: FileText },
   { href: "/auto-apply", label: "批量投递", icon: Rocket },
   { href: "/boss", label: "BOSS 直聘", icon: Briefcase },
@@ -20,7 +21,7 @@ const MOBILE_NAV_ITEMS = [
   { href: "/", label: "首页", icon: Target },
   { href: "/agent", label: "Agent", icon: Bot },
   { href: "/match", label: "匹配", icon: Briefcase },
-  { href: "/auto-apply", label: "投递", icon: Rocket },
+  { href: "/interview", label: "刷题", icon: GraduationCap },
   { href: "/applications", label: "记录", icon: Inbox },
 ]
 

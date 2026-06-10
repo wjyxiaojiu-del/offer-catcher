@@ -3,6 +3,7 @@ import { jobs } from "@/data/jobs"
 import type { Application, ApplicationMethod } from "@/types"
 import { apiError } from "@/lib/api-response"
 import { requireApiAccess } from "@/lib/api-guard"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 
 function toDisplayMethod(m: string): ApplicationMethod {
   if (m === "手动投递" || m === "自动投递" || m === "BOSS自动投递") return m
@@ -18,6 +19,7 @@ export async function POST(req: Request) {
 
   try {
     const { jobId, resumeId }: { jobId: string; resumeId?: string } = await req.json()
+    const deviceId = getDeviceIdFromRequest(req)
     const job = jobs.find(j => j.id === jobId)
     if (!job) return apiError("岗位不存在", "JOB_NOT_FOUND", 404)
 
@@ -42,6 +44,7 @@ export async function POST(req: Request) {
         data: {
           id: appData.id,
           resumeId: resumeId || null,
+          deviceId: deviceId || undefined,
           jobId: appData.jobId,
           jobSnapshot: JSON.stringify(appData.jobSnapshot),
           status: appData.status,
@@ -63,10 +66,15 @@ export async function GET(req: Request) {
   const authError = requireApiAccess(req)
   if (authError) return authError
 
+  const deviceId = getDeviceIdFromRequest(req)
+
   // Try DB first, fallback to memory
   try {
     const { prisma } = await import("@/lib/db")
-    const dbApps = await prisma.application.findMany({ orderBy: { appliedAt: "desc" } })
+    const dbApps = await prisma.application.findMany({
+      where: { deviceId: deviceId || undefined },
+      orderBy: { appliedAt: "desc" },
+    })
     const apps: Application[] = dbApps.map(a => {
       let snapshot: Application["jobSnapshot"] = undefined
       try {

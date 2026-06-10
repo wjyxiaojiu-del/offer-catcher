@@ -8,7 +8,6 @@ import {
 } from "lucide-react"
 import { CountUp } from "@/components/count-up"
 import { ApplicationSkeleton } from "@/components/skeleton"
-import { migrateLocalStorageToDb } from "@/lib/migration"
 import { cn } from "@/lib/utils"
 import type { Application, ApplicationStatus } from "@/types"
 
@@ -27,42 +26,50 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    migrateLocalStorageToDb().catch(() => {})
-    fetch("/api/apply")
+    fetch("/api/applications")
       .then(r => r.json())
       .then(data => {
-        if (data.applications?.length > 0) {
-          setApplications(data.applications)
-          localStorage.setItem("applications", JSON.stringify(data.applications))
-        } else {
-          const stored = localStorage.getItem("applications")
-          if (stored) setApplications(JSON.parse(stored))
-        }
+        setApplications(data.applications || [])
         setLoading(false)
       })
       .catch(() => {
-        const stored = localStorage.getItem("applications")
-        if (stored) setApplications(JSON.parse(stored))
+        setApplications([])
         setLoading(false)
       })
   }, [])
 
-  const updateStatus = (id: string, newStatus: string) => {
-    const updated = applications.map(a => a.id === id ? { ...a, status: newStatus as ApplicationStatus } : a)
-    setApplications(updated)
-    localStorage.setItem("applications", JSON.stringify(updated))
+  const updateStatus = async (id: string, newStatus: string) => {
+    try {
+      const res = await fetch(`/api/applications?id=${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      })
+      if (res.ok) {
+        setApplications(prev => prev.map(a => a.id === id ? { ...a, status: newStatus as ApplicationStatus } : a))
+      }
+    } catch {
+      // silently fail
+    }
   }
 
-  const deleteApp = (id: string) => {
-    const updated = applications.filter(a => a.id !== id)
-    setApplications(updated)
-    localStorage.setItem("applications", JSON.stringify(updated))
+  const deleteApp = async (id: string) => {
+    try {
+      const res = await fetch(`/api/applications?id=${id}`, { method: "DELETE" })
+      if (res.ok) {
+        setApplications(prev => prev.filter(a => a.id !== id))
+      }
+    } catch {
+      // silently fail
+    }
   }
 
   const clearAll = () => {
     if (confirm("确定清空所有投递记录？")) {
-      localStorage.removeItem("applications")
-      setApplications([])
+      // Batch delete via sequential API calls (no batch endpoint yet)
+      Promise.all(applications.map(a => fetch(`/api/applications?id=${a.id}`, { method: "DELETE" })))
+        .then(() => setApplications([]))
+        .catch(() => {})
     }
   }
 

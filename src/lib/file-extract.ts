@@ -21,6 +21,13 @@ export class UnsupportedFileError extends Error {
   }
 }
 
+export class ParseError extends Error {
+  constructor(public readonly fileType: string, message: string) {
+    super(message)
+    this.name = "ParseError"
+  }
+}
+
 async function parsePDF(buffer: Buffer, filename = "upload.pdf"): Promise<string> {
   // Step 1: Try unpdf (fast, text-based PDFs)
   try {
@@ -46,7 +53,7 @@ async function parsePDF(buffer: Buffer, filename = "upload.pdf"): Promise<string
     console.warn("MinerU OCR fallback failed:", ocrErr.message)
   }
 
-  throw new Error("无法从 PDF 中提取文本，建议转为 DOCX/TXT 后上传。如果是扫描件，请配置 MinerU OCR 服务。")
+  throw new ParseError("PDF", "无法从 PDF 中提取文本，建议转为 DOCX/TXT 后上传。如果是扫描件，请配置 MinerU OCR 服务。")
 }
 
 async function parseDOCX(buffer: Buffer): Promise<string> {
@@ -58,7 +65,7 @@ async function parseDOCX(buffer: Buffer): Promise<string> {
     return result.value || ""
   } catch (err: any) {
     console.error("DOCX parse error:", err)
-    throw new Error(`DOCX解析失败: ${err.message || "请检查文件格式"}`)
+    throw new ParseError("DOCX", `DOCX解析失败: ${err.message || "请检查文件格式"}`)
   }
 }
 

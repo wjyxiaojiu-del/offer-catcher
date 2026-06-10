@@ -55,6 +55,7 @@ export const AgentChatBodySchema = z.object({
   message: z.string().trim().min(1, "消息不能为空").max(8000, "消息过长"),
   sessionId: z.string().optional(),
   resumeText: z.string().max(50000).optional(),
+  userId: z.string().optional(),
 })
 
 export const ResumeTextBodySchema = z.object({
@@ -70,12 +71,14 @@ export const BossBodySchema = z.object({
     "wait-login",
     "search",
     "apply",
+    "progress",
     "screenshot",
     "close",
   ]),
   config: z.any().optional(),
   resumeSkills: z.array(z.string()).optional(),
   resumeId: z.string().optional(),
+  taskId: z.string().optional(),
 })
 
 export type AutoApplyBody = z.infer<typeof AutoApplyBodySchema>

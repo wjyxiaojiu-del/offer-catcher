@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useToast } from "@/components/ui/toast"
 import type { ParsedResume, Education, Experience, Project } from "@/types"
 
@@ -32,63 +32,47 @@ const emptyResume: ParsedResume = {
   education: [],
   experience: [],
   skills: [],
+  skillGrades: [],
   projects: [],
   rawText: "",
   summary: "",
 }
 
-export default function ResumeEditPage() {
+function ResumeEditPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const [resume, setResume] = useState<ParsedResume>(emptyResume)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [skillInput, setSkillInput] = useState("")
+  const [resumeId, setResumeId] = useState<string | null>(null)
 
   useEffect(() => {
     const load = async () => {
-      const resumeId = sessionStorage.getItem("resumeId")
-      const resumeText = sessionStorage.getItem("resumeText")
+      const id = searchParams.get("resumeId")
 
-      if (resumeId) {
-        try {
-          const res = await fetch(`/api/resume?id=${resumeId}`)
-          const data = await res.json()
-          if (data.resume) {
-            setResume(data.resume)
-            setLoading(false)
-            return
-          }
-        } catch (e) {
-          console.warn("Load resume by id failed:", e)
+      if (!id) { router.push("/"); setLoading(false); return }
+
+      setResumeId(id)
+
+      try {
+        const res = await fetch(`/api/resume?id=${id}`)
+        const data = await res.json()
+        if (data?.resume) {
+          setResume(data.resume)
         }
+      } catch (e) {
+        console.warn("Load resume by id failed:", e)
+        router.push("/")
       }
-
-      if (resumeText) {
-        try {
-          const res = await fetch("/api/resume", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: resumeText }),
-          })
-          const data = await res.json()
-          if (data.resume) {
-            setResume(data.resume)
-            if (data.resumeId) sessionStorage.setItem("resumeId", data.resumeId)
-          }
-        } catch (e) {
-          console.warn("Parse resume text failed:", e)
-        }
-      }
-
       setLoading(false)
     }
     load()
-  }, [])
+  }, [router, searchParams])
 
   const handleSave = async () => {
     setSaving(true)
-    const resumeId = sessionStorage.getItem("resumeId")
     try {
       const res = await fetch("/api/resume", {
         method: "PUT",
@@ -97,8 +81,7 @@ export default function ResumeEditPage() {
       })
       const data = await res.json()
       if (data.id) {
-        sessionStorage.setItem("resumeId", data.id)
-        sessionStorage.setItem("resumeText", resume.rawText)
+        setResumeId(data.id)
       }
       toast("保存成功", "success")
     } catch {
@@ -473,5 +456,13 @@ export default function ResumeEditPage() {
         </section>
       </main>
     </div>
+  )
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-gray-400">加载中...</div>}>
+      <ResumeEditPage />
+    </Suspense>
   )
 }

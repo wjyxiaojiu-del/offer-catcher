@@ -3,7 +3,34 @@ import { getBossInstance, closeBossInstance } from "@/lib/boss-auto"
 import { requireApiAccess, requireBossAutomation } from "@/lib/api-guard"
 import { apiError } from "@/lib/api-response"
 import { parseBody, BossBodySchema } from "@/lib/schemas"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 import type { BossJob } from "@/types"
+
+// ── In-memory task store for async apply ──────────────────────────────────
+// BOSS automation only runs in local/Docker (not Vercel serverless), so
+// in-memory state is safe. Tasks expire after 30 min to prevent leaks.
+
+type TaskState = {
+  status: "running" | "done" | "error"
+  results: BossJob[]
+  currentJob?: string
+  progress: { current: number; total: number }
+  error?: string
+  createdAt: number
+}
+
+const tasks = new Map<string, TaskState>()
+
+function generateTaskId(): string {
+  return `task-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function cleanupExpiredTasks(maxAgeMs = 30 * 60 * 1000) {
+  const cutoff = Date.now() - maxAgeMs
+  tasks.forEach((task, id) => {
+    if (task.createdAt < cutoff) tasks.delete(id)
+  })
+}
 
 // POST /api/boss - Handle different actions
 export async function POST(req: Request) {
@@ -13,7 +40,8 @@ export async function POST(req: Request) {
   try {
     const parsed = await parseBody(req, BossBodySchema)
     if (!parsed.ok) return apiError(parsed.error, "INVALID_INPUT", 400)
-    const { action, config, resumeSkills, resumeId: bodyResumeId } = parsed.data
+    const { action, config, resumeSkills, resumeId: bodyResumeId, taskId } = parsed.data
+    const deviceId = getDeviceIdFromRequest(req)
 
     switch (action) {
       case "launch": {
@@ -45,48 +73,109 @@ export async function POST(req: Request) {
       }
 
       case "apply": {
-        const boss = await getBossInstance()
-        const results = await boss.batchApply(config, resumeSkills || [])
+        const newTaskId = generateTaskId()
+        tasks.set(newTaskId, {
+          status: "running",
+          results: [],
+          progress: { current: 0, total: 0 },
+          createdAt: Date.now(),
+        })
 
-        // Persist successful applications to DB
-        const { prisma } = await import("@/lib/db")
-        const resumeId = bodyResumeId || undefined
-        const sentJobs = results.filter((r: BossJob) => r.status === "sent")
-        if (sentJobs.length > 0) {
+        // Run async so the HTTP response returns immediately
+        ;(async () => {
           try {
-            await prisma.$transaction(
-              sentJobs.map((job: BossJob) =>
-                prisma.application.create({
-                  data: {
-                    resumeId,
-                    jobSnapshot: JSON.stringify({
-                      title: job.title,
-                      company: job.company,
-                      location: job.location,
-                      salary: job.salary,
-                      experience: job.experience,
-                      education: job.education,
-                      description: job.description,
-                      url: job.url,
-                      hrName: job.hrName,
-                    }),
-                    status: "applied",
-                    method: "boss_auto",
-                    notes: job.message || "BOSS 直聘自动投递",
-                  },
-                })
-              )
+            const boss = await getBossInstance()
+            const selectedJobs: BossJob[] = config?.selectedJobs ?? []
+            const toApplyCount = selectedJobs.length || (config?.maxApply ?? 10)
+
+            tasks.set(newTaskId, {
+              status: "running",
+              results: [],
+              progress: { current: 0, total: toApplyCount },
+              createdAt: Date.now(),
+            })
+
+            const results = await boss.batchApply(
+              config,
+              resumeSkills || [],
+              (job, result) => {
+                const existing = tasks.get(newTaskId)
+                if (!existing) return
+                existing.results.push({ ...job, status: result.success ? "sent" : "error", message: result.message })
+                existing.currentJob = job.title
+                existing.progress.current = existing.results.length
+                tasks.set(newTaskId, existing)
+              }
             )
-          } catch (dbErr) {
-            console.warn("BOSS apply DB persist failed:", dbErr)
+
+            // Persist successful applications to DB
+            const resumeId = bodyResumeId || undefined
+            const sentJobs = results.filter((r: BossJob) => r.status === "sent")
+            if (sentJobs.length > 0) {
+              try {
+                const { prisma } = await import("@/lib/db")
+                await prisma.$transaction(
+                  sentJobs.map((job: BossJob) =>
+                    prisma.application.create({
+                      data: {
+                        resumeId,
+                        deviceId: deviceId || undefined,
+                        jobSnapshot: JSON.stringify({
+                          title: job.title,
+                          company: job.company,
+                          location: job.location,
+                          salary: job.salary,
+                          experience: job.experience,
+                          education: job.education,
+                          description: job.description,
+                          url: job.url,
+                          hrName: job.hrName,
+                        }),
+                        status: "applied",
+                        method: "boss_auto",
+                        notes: job.message || "BOSS 直聘自动投递",
+                      },
+                    })
+                  )
+                )
+              } catch (dbErr) {
+                console.warn("BOSS apply DB persist failed:", dbErr)
+              }
+            }
+
+            tasks.set(newTaskId, {
+              status: "done",
+              results,
+              progress: { current: results.length, total: toApplyCount },
+              createdAt: Date.now(),
+            })
+          } catch (err: any) {
+            const existing = tasks.get(newTaskId)
+            tasks.set(newTaskId, {
+              status: "error",
+              results: existing?.results ?? [],
+              progress: existing?.progress ?? { current: 0, total: 0 },
+              error: err.message || "投递失败",
+              createdAt: Date.now(),
+            })
           }
-        }
+        })()
+
+        return NextResponse.json({ taskId: newTaskId, message: "投递任务已启动" })
+      }
+
+      case "progress": {
+        if (!taskId) return apiError("缺少 taskId", "MISSING_TASK_ID", 400)
+        cleanupExpiredTasks()
+        const task = tasks.get(taskId)
+        if (!task) return NextResponse.json({ status: "not_found" }, { status: 404 })
 
         return NextResponse.json({
-          results,
-          total: results.length,
-          sent: results.filter((r: BossJob) => r.status === "sent").length,
-          failed: results.filter((r: BossJob) => r.status === "error").length,
+          status: task.status,
+          progress: task.progress,
+          currentJob: task.currentJob,
+          results: task.status === "done" ? task.results : undefined,
+          error: task.error,
         })
       }
 
@@ -122,7 +211,8 @@ export async function GET(req: Request) {
       "login-status": "POST { action: 'login-status' } - 检查登录状态",
       "wait-login": "POST { action: 'wait-login' } - 等待扫码登录",
       search: "POST { action: 'search', config: { keywords, city, maxApply } } - 搜索岗位",
-      apply: "POST { action: 'apply', config: {...}, resumeSkills: [...] } - 批量投递",
+      apply: "POST { action: 'apply', config: {...}, resumeSkills: [...] } - 启动异步投递任务",
+      progress: "POST { action: 'progress', taskId } - 查询投递进度",
       screenshot: "POST { action: 'screenshot' } - 获取浏览器截图",
       close: "POST { action: 'close' } - 关闭浏览器",
     },

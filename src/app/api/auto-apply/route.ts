@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server"
 import { matchResumeToJobs } from "@/lib/matcher"
-import { jobs } from "@/data/jobs"
+import { getAllJobs } from "@/lib/job-service"
 import type { Application, ParsedResume } from "@/types"
 import { apiError } from "@/lib/api-response"
 import { requireApiAccess } from "@/lib/api-guard"
 import { parseBody, AutoApplyBodySchema } from "@/lib/schemas"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 
 export async function POST(req: Request) {
   const authError = requireApiAccess(req)
@@ -15,6 +16,13 @@ export async function POST(req: Request) {
     if (!parsed.ok) return apiError(parsed.error, "INVALID_INPUT", 400)
     const { config } = parsed.data
     const resume = parsed.data.resume as ParsedResume
+    const deviceId = getDeviceIdFromRequest(req)
+
+    // Fetch real jobs from DB (fallback to builtin if empty)
+    const jobs = await getAllJobs()
+    if (jobs.length === 0) {
+      return apiError("暂无可用岗位，请先导入岗位数据", "NO_JOBS", 404)
+    }
 
     // Match all jobs
     const results = matchResumeToJobs(resume, jobs)
@@ -71,6 +79,7 @@ export async function POST(req: Request) {
         data: appliedJobs.map(a => ({
           id: a.id,
           jobId: a.jobId,
+          deviceId: deviceId || undefined,
           jobSnapshot: JSON.stringify(a.jobSnapshot),
           matchScore: a.score || 0,
           status: a.status,
@@ -105,10 +114,12 @@ export async function GET(req: Request) {
   const authError = requireApiAccess(req)
   if (authError) return authError
 
+  const deviceId = getDeviceIdFromRequest(req)
+
   try {
     const { prisma } = await import("@/lib/db")
     const dbApps = await prisma.application.findMany({
-      where: { method: "自动投递" },
+      where: { method: "自动投递", deviceId: deviceId || undefined },
       orderBy: { appliedAt: "desc" },
       take: 100,
     })

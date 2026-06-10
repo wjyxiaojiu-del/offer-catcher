@@ -33,11 +33,14 @@ dev.log
 *.db
 *.db-journal
 
+# IDE / editor
+.vscode/
+.idea/
+.csi/
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
-next-env.d.ts
-
-.vercel
+# next-env.d.ts 不应被忽略 — Next.js 需要该文件参与版本控制

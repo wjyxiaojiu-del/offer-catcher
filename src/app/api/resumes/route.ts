@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { prisma } from "@/lib/db"
 import { requireApiAccess } from "@/lib/api-guard"
 import { dbResumeToParsed } from "@/lib/resume-mapper"
+import { getDeviceIdFromRequest } from "@/lib/api-device"
 
 // GET /api/resumes - 获取简历列表
 export async function GET(req: Request) {
@@ -9,7 +10,9 @@ export async function GET(req: Request) {
   if (authError) return authError
 
   try {
+    const deviceId = getDeviceIdFromRequest(req)
     const resumes = await prisma.resume.findMany({
+      where: { deviceId: deviceId || undefined },
       include: {
         educations: true,
         experiences: true,

@@ -1,4 +1,4 @@
-import type { ParsedResume, Education, Experience, Project } from "@/types"
+import type { ParsedResume, Education, Experience, Project, SkillGrade } from "@/types"
 
 // Skill dictionary for extraction (200+ terms)
 const SKILL_DICT = [
@@ -52,18 +52,18 @@ const SKILL_DICT = [
 
 export function parseResume(text: string): ParsedResume {
   if (!text || text.trim().length < 5) {
-    return { name: "", email: "", phone: "", education: [], experience: [], skills: [], projects: [], rawText: text || "" }
+    return { name: "", email: "", phone: "", education: [], experience: [], skills: [], skillGrades: [], projects: [], rawText: text || "" }
   }
   const lines = text.split("\n").map(l => l.trim()).filter(Boolean)
   const name = extractName(lines)
   const email = extractEmail(text)
   const phone = extractPhone(text)
-  const skills = extractSkills(text)
+  const { skills, skillGrades } = extractSkills(text)
   const education = extractEducation(text)
   const experience = extractExperience(text)
   const projects = extractProjects(text)
 
-  return { name, email, phone, education, experience, skills, projects, rawText: text }
+  return { name, email, phone, education, experience, skills, skillGrades, projects, rawText: text }
 }
 
 /** Exported for testing */
@@ -133,23 +133,81 @@ function containsSkill(text: string, skill: string): boolean {
   return false
 }
 
-export function extractSkills(text: string): string[] {
-  if (!text || text.trim().length < 2) return []
-  const found: string[] = []
+/**
+ * Extract skills with grading based on where they appear.
+ * Returns both a flat deduplicated list and a graded list (max 15).
+ *
+ * Priority:
+ *   core    — explicitly listed in 技能/Skills section
+ *   project — found in project techStack descriptions
+ *   general — found anywhere else in the text
+ */
+export function extractSkills(text: string): { skills: string[]; skillGrades: SkillGrade[] } {
+  if (!text || text.trim().length < 2) return { skills: [], skillGrades: [] }
+
+  const gradedMap = new Map<string, SkillGrade["grade"]>()
+
+  // 1. Extract from dedicated skills section → core
+  const skillSection = text.match(/(?:技能|Skills|专业技能|技术栈)[：:]?\s*([^\n]+(?:\n[^\n]+)*)/i)
+  const skillSectionText = skillSection ? skillSection[1] : ""
+
+  // Scan skill section against dictionary
   for (const skill of SKILL_DICT) {
-    if (containsSkill(text, skill)) {
-      found.push(skill)
+    if (containsSkill(skillSectionText, skill)) {
+      gradedMap.set(skill, "core")
     }
   }
-  // Also extract from "技能" or "Skills" section
-  const skillSection = text.match(/(?:技能|Skills|专业技能|技术栈)[：:]?\s*([^\n]+(?:\n[^\n]+)*)/i)
+  // Also extract raw items from skill section
   if (skillSection) {
     const items = skillSection[1].split(/[,，、;；\s]+/).filter(s => s.length > 1 && s.length < 20)
     for (const item of items) {
-      if (!found.includes(item)) found.push(item)
+      if (!gradedMap.has(item)) {
+        gradedMap.set(item, "core")
+      }
     }
   }
-  return Array.from(new Set(found))
+
+  // 2. Extract from project descriptions → project
+  const projSection = text.match(/(?:项目经历|项目经验|Projects)[：:]?\s*([^]*?)(?=工作经历|实习经历|教育经历|技能|专业技能|自我评价|获奖|$)/i)
+  const projText = projSection ? projSection[1] : ""
+  for (const skill of SKILL_DICT) {
+    if (!gradedMap.has(skill) && containsSkill(projText, skill)) {
+      gradedMap.set(skill, "project")
+    }
+  }
+
+  // 3. Scan full text for remaining skills → general
+  for (const skill of SKILL_DICT) {
+    if (!gradedMap.has(skill) && containsSkill(text, skill)) {
+      gradedMap.set(skill, "general")
+    }
+  }
+
+  // 4. Deduplicate, keeping highest priority (core > project > general)
+  const gradePriority: Record<SkillGrade["grade"], number> = { core: 3, project: 2, general: 1 }
+  const skillGrades: SkillGrade[] = []
+  for (const entry of Array.from(gradedMap.entries())) {
+    const skill = entry[0]
+    const grade = entry[1]
+    // Check for case-insensitive duplicate with higher grade
+    const existing = skillGrades.find(sg => sg.skill.toLowerCase() === skill.toLowerCase())
+    if (existing) {
+      if (gradePriority[grade] > gradePriority[existing.grade]) {
+        existing.grade = grade
+      }
+    } else {
+      skillGrades.push({ skill, grade })
+    }
+  }
+
+  // 5. Sort by grade priority (core first), then cap at 15
+  skillGrades.sort((a, b) => gradePriority[b.grade] - gradePriority[a.grade])
+  const capped = skillGrades.slice(0, 15)
+
+  return {
+    skills: capped.map(sg => sg.skill),
+    skillGrades: capped,
+  }
 }
 
 export function extractEducation(text: string): Education[] {

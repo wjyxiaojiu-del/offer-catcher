@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { matchResumeToJobs, generateOptimizationReport, calculateWeights, calculateKeywordMatch } from "./matcher"
+import { matchResumeToJobs, generateOptimizationReport, calculateWeights } from "./matcher"
 import type { ParsedResume, Job } from "@/types"
 
 // ============================================================
@@ -12,6 +12,7 @@ function makeResume(overrides: Partial<ParsedResume> = {}): ParsedResume {
     email: "test@example.com",
     phone: "13800138000",
     skills: [],
+    skillGrades: [],
     education: [],
     experience: [],
     projects: [],
@@ -149,9 +150,9 @@ describe("matchResumeToJobs", () => {
 
   it("handles job with zero skills", () => {
     const resume = makeResume({ skills: ["React"], rawText: "React developer" })
-    const job = makeJob({ skills: [] })
+    const job = makeJob({ skills: [], requiredSkills: [], description: "" })
     const [r] = matchResumeToJobs(resume, [job])
-    // Zero skills should give a default score of 50
+    // Zero skills + empty description → no weighted items → default 50
     expect(r.skillMatch).toBe(50)
   })
 
@@ -177,128 +178,42 @@ describe("matchResumeToJobs", () => {
 describe("calculateWeights", () => {
   it("triggers entry-level weight for '0-2年' experience", () => {
     const weights = calculateWeights(makeJob({ experience: "0-2年" }))
-    expect(weights.skill).toBe(0.45)
+    expect(weights.skill).toBe(0.50)
     expect(weights.exp).toBe(0.10)
   })
 
   it("does NOT trigger entry-level weight for '10-15年' experience", () => {
     // "10-15年" contains "0-" as substring but should NOT be entry-level
     const weights = calculateWeights(makeJob({ experience: "10-15年" }))
-    expect(weights.skill).toBe(0.40)  // default, NOT 0.45
-    expect(weights.exp).toBe(0.15)    // default, NOT 0.10
+    expect(weights.skill).toBe(0.45)  // default, NOT 0.50
+    expect(weights.exp).toBe(0.20)    // default, NOT 0.10
   })
 
   it("triggers entry-level weight for '0~3年' (tilde separator)", () => {
     const weights = calculateWeights(makeJob({ experience: "0~3年" }))
-    expect(weights.skill).toBe(0.45)
+    expect(weights.skill).toBe(0.50)
     expect(weights.exp).toBe(0.10)
   })
 
   it("uses default weights for '3-5年' experience", () => {
     const weights = calculateWeights(makeJob({ experience: "3-5年" }))
-    expect(weights).toEqual({ skill: 0.40, edu: 0.20, exp: 0.15, kw: 0.25 })
+    expect(weights).toEqual({ skill: 0.45, edu: 0.15, exp: 0.20, project: 0.20 })
   })
 
   it("increases education weight for AI/research jobs", () => {
     const weights = calculateWeights(makeJob({ tags: ["AI"] }))
-    expect(weights.edu).toBe(0.25)
-    expect(weights.skill).toBe(0.35)
+    expect(weights.edu).toBe(0.20)
+    expect(weights.skill).toBe(0.40)
   })
 
   it("increases education weight for NLP tagged jobs", () => {
     const weights = calculateWeights(makeJob({ tags: ["NLP"] }))
-    expect(weights.edu).toBe(0.25)
+    expect(weights.edu).toBe(0.20)
   })
 
   it("returns default weights for jobs with no special tags", () => {
     const weights = calculateWeights(makeJob({ tags: ["前端"], experience: "3-5年" }))
-    expect(weights).toEqual({ skill: 0.40, edu: 0.20, exp: 0.15, kw: 0.25 })
-  })
-})
-
-// ============================================================
-// calculateKeywordMatch — keyword weighting
-// ============================================================
-
-describe("calculateKeywordMatch", () => {
-  it("gives higher weight to skills than description words", () => {
-    const job = makeJob({
-      skills: ["React"],
-      requiredSkills: ["React"],
-      niceToHaveSkills: [],
-      requirements: [],
-      description: "负责前端开发工作",
-    })
-    // Resume has "React" in text
-    const score = calculateKeywordMatch("React developer with 3 years experience", job)
-    // Should get a decent score because "React" is a skill keyword (higher weight)
-    expect(score).toBeGreaterThan(0)
-  })
-
-  it("filters stop words from description keywords", () => {
-    const job = makeJob({
-      skills: [],
-      requiredSkills: [],
-      niceToHaveSkills: [],
-      requirements: [],
-      description: "熟悉 React 了解 Vue 优先考虑",
-    })
-    // "熟悉", "了解", "优先" should be filtered out as stop words
-    const score = calculateKeywordMatch("React Vue developer", job)
-    // Score should be based on "React" and "Vue" only, not the stop words
-    expect(score).toBeGreaterThan(0)
-  })
-
-  it("requires minimum keyword length of 3 characters", () => {
-    const job = makeJob({
-      skills: [],
-      requiredSkills: [],
-      niceToHaveSkills: [],
-      requirements: [],
-      description: "Go is great for backend development",
-    })
-    // "Go" (2 chars) and "is" (2 chars) should be filtered out
-    const score = calculateKeywordMatch("backend developer", job)
-    // Only "great", "backend", "development" should count
-    expect(score).toBeGreaterThanOrEqual(0)
-  })
-
-  it("gives higher score when skills keywords match vs only description match", () => {
-    const skillJob = makeJob({
-      skills: ["React"],
-      requiredSkills: ["React"],
-      niceToHaveSkills: [],
-      requirements: [],
-      description: "",
-    })
-    const descJob = makeJob({
-      skills: [],
-      requiredSkills: [],
-      niceToHaveSkills: [],
-      requirements: [],
-      description: "React 开发经验",
-    })
-    const skillScore = calculateKeywordMatch("React developer with 3 years", skillJob)
-    const descScore = calculateKeywordMatch("React developer with 3 years", descJob)
-    // Skills have 3x weight vs description 1x, so skill score should be higher
-    expect(skillScore).toBeGreaterThan(descScore)
-  })
-
-  it("handles CJK keyword matching", () => {
-    const job = makeJob({
-      skills: [],
-      requiredSkills: [],
-      niceToHaveSkills: [],
-      requirements: [],
-      description: "机器学习 深度学习 自然语言处理",
-    })
-    const score = calculateKeywordMatch("熟悉机器学习和深度学习技术", job)
-    expect(score).toBeGreaterThan(0)
-  })
-
-  it("returns 0 for empty text", () => {
-    const job = makeJob({ skills: ["React"], description: "React developer" })
-    expect(calculateKeywordMatch("", job)).toBe(0)
+    expect(weights).toEqual({ skill: 0.45, edu: 0.15, exp: 0.20, project: 0.20 })
   })
 })
 
@@ -307,11 +222,11 @@ describe("calculateKeywordMatch", () => {
 // ============================================================
 
 describe("generateOptimizationReport", () => {
-  it("returns 6 sections each with a numeric score and improvements", () => {
+  it("returns 5 sections each with a numeric score and improvements", () => {
     const resume = makeResume({ skills: ["React"], rawText: "React developer" })
     const job = makeJob({ skills: ["React", "Vue"] })
     const report = generateOptimizationReport(resume, job)
-    expect(report.sections).toHaveLength(6)
+    expect(report.sections).toHaveLength(5)
     for (const s of report.sections) {
       expect(typeof s.score).toBe("number")
       expect(s.score).toBeGreaterThanOrEqual(0)
