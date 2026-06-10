@@ -117,7 +117,7 @@ function planTasksByRules(intent: ParsedIntent, ctx: AgentContext): Task[] {
 
   switch (intent.intent) {
     case "parse_resume":
-      tasks.push(createTask("parse", "解析简历", "从文本中提取结构化简历信息", "resumeParser"))
+      tasks.push(createTask("parse", "解析简历", "从文本中提取结构化简历信息", "parseResumeText"))
       break
 
     case "match_jobs":

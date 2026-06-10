@@ -4,6 +4,7 @@ import { useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/components/ui/toast"
 import { getApiErrorMessage } from "@/lib/api-client"
+import Link from "next/link"
 
 const SAMPLE_RESUME = `王小明
 wangxiaoming@email.com | 13800138000
@@ -201,6 +202,14 @@ export function UploadSection() {
             disabled={!resumeText.trim()}>
             🤖 BOSS 直聘
           </button>
+          {resumeId && (
+            <Link
+              href={`/agent?resumeId=${resumeId}`}
+              className="flex-1 sm:flex-none px-4 py-3 rounded-xl font-medium text-sm bg-gradient-to-r from-blue-600 to-purple-600 text-white text-center hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all"
+            >
+              💬 去问 Agent
+            </Link>
+          )}
         </div>
       </div>
     </div>

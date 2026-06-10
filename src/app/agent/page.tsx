@@ -1,9 +1,9 @@
 "use client"
 
-import { useState, useRef, useEffect, useCallback } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useRef, useEffect, useCallback, Suspense } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { Bot, Target, PenLine, Paperclip, TrendingUp } from "lucide-react"
+import { Bot, Target, PenLine, Paperclip, TrendingUp, FileText } from "lucide-react"
 import { useToast } from "@/components/ui/toast"
 import { getApiErrorMessage } from "@/lib/api-client"
 import { renderMarkdown } from "@/lib/markdown"
@@ -51,10 +51,23 @@ function MatchCardInline({ m, onClick }: { m: AgentMatch; onClick: () => void })
   )
 }
 
+export default function AgentPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[calc(100vh-56px)] items-center justify-center bg-gray-50">
+        <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full" />
+      </div>
+    }>
+      <AgentPageInner />
+    </Suspense>
+  )
+}
+
 // ============ Main Page ============
 
-export default function AgentPage() {
+function AgentPageInner() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
   const {
     sessions,
@@ -76,29 +89,54 @@ export default function AgentPage() {
   const latestResumeRef = useRef<{ id: string; name: string; rawText: string } | null>(null)
   const [resumeReady, setResumeReady] = useState(false)
 
-  // Load latest resume on mount
+  // Load resume on mount: prefer URL resumeId, fallback to latest
   useEffect(() => {
-    fetch("/api/resumes")
-      .then(async (res) => {
-        if (!res.ok) return
-        const data = await res.json()
-        const resumes = Array.isArray(data.resumes) ? data.resumes : []
-        if (resumes.length > 0) {
-          const latest = resumes[0]
-          latestResumeRef.current = {
-            id: latest.id,
-            name: latest.name || "未命名简历",
-            rawText: latest.rawText || "",
+    const urlResumeId = searchParams.get("resumeId")
+
+    const loadResume = async () => {
+      if (urlResumeId) {
+        try {
+          const res = await fetch(`/api/resumes/${urlResumeId}`)
+          if (res.ok) {
+            const data = await res.json()
+            if (data.resume) {
+              latestResumeRef.current = {
+                id: data.resume.id,
+                name: data.resume.name || "未命名简历",
+                rawText: data.resume.rawText || "",
+              }
+              setResumeReady(true)
+              return
+            }
+          }
+        } catch {
+          // fallback to latest
+        }
+      }
+
+      try {
+        const res = await fetch("/api/resumes")
+        if (res.ok) {
+          const data = await res.json()
+          const resumes = Array.isArray(data.resumes) ? data.resumes : []
+          if (resumes.length > 0) {
+            const latest = resumes[0]
+            latestResumeRef.current = {
+              id: latest.id,
+              name: latest.name || "未命名简历",
+              rawText: latest.rawText || "",
+            }
           }
         }
-      })
-      .catch(() => {
+      } catch {
         // ignore
-      })
-      .finally(() => {
+      } finally {
         setResumeReady(true)
-      })
-  }, [])
+      }
+    }
+
+    loadResume()
+  }, [searchParams])
 
   // Auto scroll on new messages / loading state changes
   useEffect(() => {
@@ -314,6 +352,12 @@ export default function AgentPage() {
               Offer捕手求职Agent
             </h1>
           </div>
+          {latestResumeRef.current && (
+            <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full text-xs font-medium">
+              <FileText className="w-3 h-3" />
+              <span className="truncate max-w-[120px]">{latestResumeRef.current.name}</span>
+            </div>
+          )}
           <div className="ml-auto flex items-center gap-2">
             <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             <span className="text-xs text-gray-500 hidden sm:inline">在线</span>

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Target, Bot, BarChart3, Send, MessageSquare, ArrowRight, Sparkles, FileText, Clock } from "lucide-react"
+import { Target, Bot, BarChart3, Send, MessageSquare, ArrowRight, Sparkles, FileText, Clock, MessageCircle } from "lucide-react"
 import { CountUp } from "@/components/count-up"
 import { UploadSection } from "@/components/home/upload-section"
 import { cn } from "@/lib/utils"
@@ -142,21 +142,34 @@ export default function Home() {
               {recentResumes.map((r) => (
                 <div
                   key={r.id}
-                  onClick={() => router.push(`/match?resumeId=${r.id}`)}
-                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition-colors border border-transparent hover:border-gray-100"
+                  className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-100"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <FileText className="w-4 h-4 text-blue-500" />
+                  <div
+                    className="flex-1 min-w-0 cursor-pointer"
+                    onClick={() => router.push(`/match?resumeId=${r.id}`)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+                        <FileText className="w-4 h-4 text-blue-500" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {r.name || "未命名简历"}
+                        </p>
+                        <p className="text-xs text-gray-400">
+                          {r.education?.[0]?.school || ""} · {r.skills?.length || 0} 项技能
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900 truncate">
-                      {r.name || "未命名简历"}
-                    </p>
-                    <p className="text-xs text-gray-400">
-                      {r.education?.[0]?.school || ""} · {r.skills?.length || 0} 项技能
-                    </p>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                  <Link
+                    href={`/agent?resumeId=${r.id}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-shrink-0 px-2.5 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1"
+                  >
+                    <MessageCircle className="w-3 h-3" />
+                    问Agent
+                  </Link>
                 </div>
               ))}
             </div>
